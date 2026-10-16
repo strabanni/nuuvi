@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -61,7 +61,7 @@ interface WritingStylesMap {
   plotting_first: number;
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -279,7 +279,7 @@ export default function SettingsPage() {
         color: customColors[0] || "#f45b95",
       };
 
-// Image Upload Handler (Saves to Storage & directly to User Profile)
+  // Image Upload Handler (Saves to Storage & directly to User Profile)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user || !imageModalTarget) return;
@@ -983,16 +983,16 @@ export default function SettingsPage() {
                         }}
                       />
 
-                    {/* Signature Pink Star Draggable Point */}
-                    <div
+                      {/* Signature Pink Star Draggable Point */}
+                      <div
                         className="absolute flex items-center justify-center pointer-events-none -translate-x-1/2 transition-[left] duration-75 drop-shadow-[0_2px_8px_rgba(244,91,149,0.55)] z-10"
                         style={{ left: `${val}%` }}
-                        >
+                      >
                         <Star
-                            size={18}
-                            className="text-[#f45b95] fill-[#f45b95] stroke-[#f45b95] dark:stroke-neutral-900 stroke-[1.5]"
+                          size={18}
+                          className="text-[#f45b95] fill-[#f45b95] stroke-[#f45b95] dark:stroke-neutral-900 stroke-[1.5]"
                         />
-                    </div>
+                      </div>
 
                       {/* Interactive range input */}
                       <input
@@ -1217,5 +1217,13 @@ export default function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-neutral-400 text-xs font-semibold">Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }

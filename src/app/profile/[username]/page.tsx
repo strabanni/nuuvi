@@ -9,9 +9,9 @@ import {
   Settings,
   User,
   CheckCircle2,
-  ExternalLink,
   Crown,
   Star,
+  Bot,
 } from "lucide-react";
 
 interface ProfileData {
@@ -47,9 +47,11 @@ interface CharacterCard {
   handle: string;
   avatar_url?: string;
   cover_url?: string;
+  portrait_url?: string;
   is_verified?: boolean;
   followers_count?: number;
   tagline?: string;
+  is_npc?: boolean;
 }
 
 export default function ProfilePage() {
@@ -87,7 +89,7 @@ export default function ProfilePage() {
         // 2. Fetch Characters owned by this user
         const { data: charData } = await supabase
           .from("characters")
-          .select("id, name, handle, avatar_url, cover_url, is_verified, followers_count, tagline")
+          .select("id, name, handle, avatar_url, cover_url, portrait_url, is_verified, followers_count, tagline, is_npc")
           .eq("user_id", profData.id)
           .order("created_at", { ascending: false });
 
@@ -166,43 +168,31 @@ export default function ProfilePage() {
 
   return (
     <div className="w-full flex flex-col gap-6 font-sans pb-20">
-      {/* HEADER & HERO GROUP (Tightened Distance) */}
+      {/* HEADER & HERO GROUP */}
       <div className="w-full flex flex-col gap-2.5">
-        {/* 1. TOP HEADER STRIP: GLOSSY IPHONE PILL BADGES */}
+        {/* 1. TOP HEADER STRIP */}
         <div className="w-full flex items-center justify-between px-1">
-          {/* Profile Glossy Pill */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-md border border-white/50 dark:border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.6),0_2px_8px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_4px_12px_rgba(0,0,0,0.3)]">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-md border border-white/50 dark:border-white/10 shadow-sm">
             {isOwner && (
               profile.role === "admin" || profile.role === "moderator" ? (
                 <span title={`${profile.role.toUpperCase()} (Private to you)`} className="inline-flex items-center">
-                  <Crown
-                    size={12}
-                    className="text-amber-400 fill-amber-400 drop-shadow-sm shrink-0"
-                  />
+                  <Crown size={12} className="text-amber-400 fill-amber-400 drop-shadow-sm shrink-0" />
                 </span>
               ) : (
                 <span title="Member (Private to you)" className="inline-flex items-center">
-                  <Star
-                    size={11}
-                    className="text-amber-300 fill-amber-300 drop-shadow-sm shrink-0"
-                  />
+                  <Star size={11} className="text-amber-300 fill-amber-300 drop-shadow-sm shrink-0" />
                 </span>
               )
             )}
-
-            <span
-              className="text-[11px] font-black uppercase tracking-wider transition-colors"
-              style={userTextStyle}
-            >
+            <span className="text-[11px] font-black uppercase tracking-wider transition-colors" style={userTextStyle}>
               Profile
             </span>
           </div>
 
-          {/* Small Glossy Settings Pill */}
           {isOwner && (
             <Link
               href="/settings"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 dark:bg-white/[0.08] hover:bg-white/90 dark:hover:bg-white/[0.14] backdrop-blur-md border border-white/50 dark:border-white/10 text-neutral-700 dark:text-neutral-200 text-[11px] font-bold shadow-[inset_0_1px_1px_rgba(255,255,255,0.6),0_2px_8px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_4px_12px_rgba(0,0,0,0.3)] transition group"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 dark:bg-white/[0.08] hover:bg-white/95 backdrop-blur-md border border-white/50 dark:border-white/10 text-neutral-700 dark:text-neutral-200 text-[11px] font-bold shadow-sm transition group"
             >
               <Settings size={12} className="text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-white transition" />
               <span>Settings</span>
@@ -212,32 +202,19 @@ export default function ProfilePage() {
 
         {/* 2. HERO BANNER & AVATAR BLOCK */}
         <div className="w-full flex flex-col bg-[#14151b] rounded-[28px] overflow-hidden border border-neutral-200/50 dark:border-neutral-800 shadow-sm">
-          {/* Banner */}
           <div className="w-full h-44 sm:h-52 bg-neutral-900 relative overflow-hidden">
             {profile.banner_url ? (
-              <img
-                src={profile.banner_url}
-                alt="Banner"
-                className="w-full h-full object-cover"
-              />
+              <img src={profile.banner_url} alt="Banner" className="w-full h-full object-cover" />
             ) : (
-              <div
-                className="w-full h-full opacity-35"
-                style={{ background: gradientCss }}
-              />
+              <div className="w-full h-full opacity-35" style={{ background: gradientCss }} />
             )}
           </div>
 
-          {/* User Identity Bar */}
           <div className="w-full px-6 py-4 flex items-center justify-between bg-black/40 backdrop-blur-sm -mt-12 z-10 border-t border-white/10">
             <div className="flex items-center gap-4">
               <div className="w-20 h-20 rounded-2xl overflow-hidden bg-neutral-900 border-2 border-white/20 shadow-xl shrink-0 flex items-center justify-center">
                 {profile.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={profile.display_name}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={profile.avatar_url} alt={profile.display_name} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-xl font-black text-white">
                     {(profile.display_name || profile.username || "U").slice(0, 2).toUpperCase()}
@@ -263,8 +240,6 @@ export default function ProfilePage() {
       </div>
 
       {/* 3. STATS CHIPS */}
-
-      {/* 3. STATS CHIPS */}
       <div className="flex items-center gap-3 flex-wrap">
         {[
           { label: "POSTS", value: stats.posts },
@@ -286,64 +261,49 @@ export default function ProfilePage() {
         ))}
       </div>
 
-      {/* 4. BALANCED TWO-COLUMN SECTION (Info Words on Left, Writing Style on Right) */}
+      {/* 4. BALANCED TWO-COLUMN SECTION */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        {/* LEFT COLUMN: Metadata & About Word Boxes */}
         <div className="flex flex-col gap-4 justify-between">
-          {/* Top Row: Pronouns, Age, Activity, Seeking Plots, Status */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">
-                PRONOUNS
-              </span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">PRONOUNS</span>
               <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase mt-0.5 truncate">
                 {profile.pronouns || "Not set"}
               </span>
             </div>
 
             <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">
-                AGE
-              </span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">AGE</span>
               <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase mt-0.5 truncate">
                 {profile.age || "Not set"}
               </span>
             </div>
 
             <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">
-                ACTIVITY
-              </span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">ACTIVITY</span>
               <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase mt-0.5 truncate">
                 {profile.activity_level || "Not set"}
               </span>
             </div>
 
             <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">
-                SEEKING PLOTS
-              </span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">SEEKING PLOTS</span>
               <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase mt-0.5 truncate">
                 {profile.seeking_plots || "Not set"}
               </span>
             </div>
 
-            <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800 col-span-2 sm:col-span-2">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">
-                STATUS
-              </span>
+            <div className="flex flex-col p-3 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800 col-span-2">
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400">STATUS</span>
               <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 uppercase mt-0.5 truncate">
                 {profile.status || "No active status"}
               </span>
             </div>
           </div>
 
-          {/* About Box */}
           {profile.show_about !== false && (
             <div className="flex-1 flex flex-col p-4 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800">
-              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-1">
-                ABOUT
-              </span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-1">ABOUT</span>
               <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
                 {profile.about_me || "Nothing written yet."}
               </p>
@@ -351,11 +311,8 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* RIGHT COLUMN: Writing Style Card */}
         <div className="p-5 rounded-2xl bg-white dark:bg-[#14151b] border border-neutral-200/70 dark:border-neutral-800 flex flex-col justify-between gap-3.5">
-          <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
-            WRITING STYLE
-          </span>
+          <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">WRITING STYLE</span>
 
           {(
             [
@@ -374,15 +331,8 @@ export default function ProfilePage() {
                   <span>{item.label}</span>
                   <span className="font-mono text-[10px] text-neutral-500">{pct}%</span>
                 </div>
-                {/* Progress bar filled with active user color/gradient */}
                 <div className="w-full h-2 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${pct}%`,
-                      background: gradientCss,
-                    }}
-                  />
+                  <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: gradientCss }} />
                 </div>
               </div>
             );
@@ -401,84 +351,104 @@ export default function ProfilePage() {
             No characters created yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 w-full">
             {characters.map((char) => (
-              <Link
-                key={char.id}
-                href={`/phone/${char.handle || char.id}`}
-                className="group relative flex flex-col justify-between h-72 rounded-[22px] overflow-hidden border border-neutral-200/80 dark:border-white/10 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-neutral-900"
-              >
-                {/* Cover Picture */}
-                <div className="absolute inset-0 w-full h-full">
-                  {char.cover_url || char.avatar_url ? (
-                    <img
-                      src={char.cover_url || char.avatar_url}
-                      alt={char.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-neutral-800 flex items-center justify-center font-bold text-white text-3xl">
-                      {char.name.charAt(0)}
-                    </div>
-                  )}
-                  {/* Contrast overlays */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-black/60" />
-                </div>
-
-                {/* Top Badge: Verified or Followers */}
-                <div className="relative z-10 p-3 flex flex-col items-center">
-                  {char.is_verified ? (
-                    <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold shadow-sm">
-                      <CheckCircle2 size={11} className="text-sky-400 fill-sky-400/20" />
-                      <span>Verified</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-white/15 text-white text-[10px] font-bold shadow-sm">
-                      <User size={10} className="text-neutral-300" />
-                      <span>{char.followers_count ? `${char.followers_count.toLocaleString()} followers` : "Following"}</span>
-                    </div>
-                  )}
-
-                  {/* Character Name in bold uppercase */}
-                  <h3 className="mt-2 text-center text-sm font-black text-white uppercase tracking-wider drop-shadow-md">
-                    {char.name}
-                  </h3>
-                </div>
-
-                {/* Bottom Bar: Avatar, Handle, Tagline & View Pill */}
-                <div className="relative z-10 p-2.5 m-2 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-800 shrink-0 border border-white/20">
-                      {char.avatar_url ? (
-                        <img src={char.avatar_url} alt={char.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="w-full h-full flex items-center justify-center text-[9px] font-bold text-white">
-                          {char.name.charAt(0)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-col overflow-hidden">
-                      <span className="text-[10px] font-bold text-white truncate">
-                        @{char.handle || "user"}
-                      </span>
-                      {char.tagline && (
-                        <span className="text-[8px] text-neutral-300 truncate">
-                          {char.tagline}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Glossy View Button */}
-                  <div className="px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-neutral-900 text-[10px] font-black shadow-md shrink-0 transition">
-                    View
-                  </div>
-                </div>
-              </Link>
+              <CharacterCardItem key={char.id} character={char} actionType="view" />
             ))}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function CharacterCardItem({
+  character,
+  actionType,
+}: {
+  character: CharacterCard;
+  actionType: "view" | "edit";
+}) {
+  return (
+    <Link
+      href={`/phone/${character.handle || character.id}`}
+      // Added shrink-0 here so the card container never compresses or jumps during window resizing
+      className="group relative w-full h-[238px] rounded-[24px] overflow-hidden border border-neutral-200/80 dark:border-white/10 bg-neutral-900 shadow-sm flex flex-col justify-between p-3.5 select-none shrink-0"
+    >
+      {/* Background Portrait / Cover Image */}
+      <div className="absolute inset-0 w-full h-full overflow-hidden">
+        {character.portrait_url || character.cover_url || character.avatar_url ? (
+          <img
+            src={character.portrait_url || character.cover_url || character.avatar_url}
+            alt={character.name}
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center font-black text-white/30 text-4xl">
+            {character.name.charAt(0).toUpperCase()}
+          </div>
+        )}
+
+        {/* Ambient Dark Gradient Vignette */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
+      </div>
+
+      {/* Top Header Badge & Character Name */}
+      <div className="relative z-10 flex flex-col items-center">
+        {character.is_npc ? (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold shadow-sm">
+            <Bot size={11} className="text-[#f45b95]" />
+            <span>NPC</span>
+          </div>
+        ) : character.is_verified ? (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold shadow-sm">
+            <CheckCircle2 size={11} className="text-sky-400 fill-sky-400/20" />
+            <span>Verified</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-md border border-white/15 text-white text-[10px] font-bold shadow-sm">
+            <User size={10} className="text-neutral-300" />
+            <span>
+              {character.followers_count
+                ? `${character.followers_count.toLocaleString()} followers`
+                : "Following"}
+            </span>
+          </div>
+        )}
+
+        <h3 className="mt-2 text-center text-sm font-black text-white uppercase tracking-wider drop-shadow-md truncate w-full px-1">
+          {character.name}
+        </h3>
+      </div>
+
+      {/* Bottom Freestanding Elements */}
+      <div className="relative z-10 flex items-center justify-between gap-2 pt-2">
+        <div className="flex items-center gap-2 overflow-hidden min-w-0">
+          <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-800 shrink-0 border border-white/20 shadow-sm">
+            {character.avatar_url ? (
+              <img src={character.avatar_url} alt={character.name} className="w-full h-full object-cover" />
+            ) : (
+              <span className="w-full h-full flex items-center justify-center text-[9px] font-bold text-white">
+                {character.name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col overflow-hidden min-w-0">
+            <span className="text-[10px] font-bold text-white truncate drop-shadow-sm">
+              @{character.handle || "user"}
+            </span>
+            {character.tagline && (
+              <span className="text-[8px] text-neutral-300 truncate drop-shadow-sm">
+                {character.tagline}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-neutral-900 text-[10px] font-black shadow-md shrink-0 transition">
+          {actionType === "edit" ? "Edit" : "View"}
+        </div>
+      </div>
+    </Link>
   );
 }
