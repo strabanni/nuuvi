@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Suspense } from "react";
 import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import AppShell from "@/components/AppShell";
@@ -19,7 +20,9 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <AuthProvider>
-            <AppShell>{children}</AppShell>
+            <Suspense fallback={<div className="min-h-screen bg-[#e8eaee] dark:bg-neutral-950" />}>
+              <AppShell>{children}</AppShell>
+            </Suspense>
           </AuthProvider>
         </ThemeProvider>
       </body>

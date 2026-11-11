@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import ShowcaseHeroBanner from "@/components/ShowcaseHeroBanner";
@@ -16,7 +16,7 @@ interface NotificationItem {
   category?: "All" | "For you" | "Activity" | "System";
 }
 
-export default function NotificationsPage() {
+function NotificationsContent() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [activeTab, setActiveTab] = useState<"All" | "For you" | "Activity" | "System">("All");
@@ -61,15 +61,10 @@ export default function NotificationsPage() {
     loadNotifications();
   }, [user]);
 
-  // Mark all as read with instant badge sync
   const handleMarkAllAsRead = async () => {
     if (!user) return;
-
-    // Instantly notify AppShell to clear the bell badge
     window.dispatchEvent(new CustomEvent("notifications-read"));
-
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-
     await supabase
       .from("notifications")
       .update({ is_read: true })
@@ -77,18 +72,12 @@ export default function NotificationsPage() {
       .eq("is_read", false);
   };
 
-  // Clear all notifications
   const handleClearAll = async () => {
     if (!user) return;
     if (!confirm("Are you sure you want to clear all notifications?")) return;
-
     setNotifications([]);
     window.dispatchEvent(new CustomEvent("notifications-read"));
-
-    await supabase
-      .from("notifications")
-      .delete()
-      .eq("user_id", user.id);
+    await supabase.from("notifications").delete().eq("user_id", user.id);
   };
 
   const filteredNotifications = notifications.filter((n) => {
@@ -98,7 +87,6 @@ export default function NotificationsPage() {
 
   return (
     <div className="w-full flex flex-col gap-6 font-sans pb-24 text-neutral-900 dark:text-white transition-colors duration-200">
-      {/* 1. ROTATING SHOWCASE HERO BANNER WITH GLOSSY PILL */}
       <ShowcaseHeroBanner>
         <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/45 dark:bg-black/55 backdrop-blur-xl border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25),0_8px_24px_rgba(0,0,0,0.5)] w-fit">
           <Bell size={13} className="text-[#f45b95]" />
@@ -108,7 +96,6 @@ export default function NotificationsPage() {
         </div>
       </ShowcaseHeroBanner>
 
-      {/* 2. FILTER PILLS BAR (OUTSIDE & ABOVE THE BOX) */}
       <div className="w-full max-w-2xl flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           {(["All", "For you", "Activity", ...(isAdmin ? ["System"] : [])] as const).map(
@@ -132,7 +119,6 @@ export default function NotificationsPage() {
           )}
         </div>
 
-        {/* Global Bulk Actions */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -153,7 +139,6 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* 3. NOTIFICATIONS FEED CONTAINER */}
       <div className="w-full max-w-2xl flex flex-col gap-2.5">
         {loading ? (
           <div className="w-full py-16 flex items-center justify-center">
@@ -199,5 +184,13 @@ export default function NotificationsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function NotificationsPage() {
+  return (
+    <Suspense fallback={<div className="w-full py-16 flex items-center justify-center"><div className="w-7 h-7 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" /></div>}>
+      <NotificationsContent />
+    </Suspense>
   );
 }

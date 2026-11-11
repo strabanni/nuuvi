@@ -242,7 +242,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
   
-  if (authLoading) {
+  if (!mounted || authLoading) {
     return (
       <div className="min-h-screen w-full bg-[#e8eaee] dark:bg-neutral-950 flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" />
