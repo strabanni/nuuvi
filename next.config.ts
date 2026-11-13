@@ -3,11 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   typescript: {
-    // Keeps type errors from blocking Docker builds if any remain
     ignoreBuildErrors: false,
   },
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Set to false to prevent segment-drop warnings
+  partialPrefetching: false,
   turbopack: {
     rules: {
       "*.css": {

@@ -12,7 +12,6 @@ import { Bagel_Fat_One, Poppins } from "next/font/google";
 import {
   Home,
   Inbox,
-  FolderArchive,
   Compass,
   Plus,
   Bell,
@@ -48,10 +47,16 @@ interface Profile {
   role?: "member" | "moderator" | "admin";
 }
 
+interface UserStory {
+  id: string | number;
+  title: string;
+  icon?: string | null;
+  color?: string | null;
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading, signOut } = useAuth();
   const pathname = usePathname();
-  // 1. Initialize profile state with cached values if present
   const [profile, setProfile] = useState<Profile | null>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem("nuuvi_cached_profile");
@@ -77,10 +82,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Online user presence counter
   const [onlineUsersCount, setOnlineUsersCount] = useState<number>(1);
 
+  // Real User Stories
+  const [userStories, setUserStories] = useState<UserStory[]>([]);
+
   useEffect(() => {
     if (!user) return;
 
-    // Track active presence across connected clients
     const presenceRoom = supabase.channel("online-users", {
       config: {
         presence: {
@@ -113,12 +120,61 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
+  // Fetch real stories the user belongs to or owns
+  useEffect(() => {
+    if (!user) return;
+    const currentUser = user;
+
+    async function loadStories() {
+      const { data, error } = await supabase
+        .from("story_members")
+        .select(`
+          story_id,
+          stories (
+            id,
+            title,
+            icon,
+            color
+          )
+        `)
+        .eq("user_id", currentUser.id);
+
+      if (!error && data) {
+        const list = data
+          .map((row: any) => row.stories)
+          .filter(Boolean) as UserStory[];
+        setUserStories(list);
+      }
+    }
+
+    loadStories();
+
+    // Listen for live story changes
+    const storiesChannel = supabase
+      .channel("shell-stories-channel")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "story_members",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        () => loadStories()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(storiesChannel);
+    };
+  }, [user]);
+
   // Fetch profile including user_colors
   useEffect(() => {
     if (!user) return;
     const currentUser = user;
     async function loadProfile() {
-    const { data } = await supabase
+      const { data } = await supabase
         .from("profiles")
         .select("id, username, display_name, avatar_url, user_colors, is_verified, role")
         .eq("id", currentUser.id)
@@ -128,7 +184,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
     loadProfile();
 
-    // Listen for realtime profile changes (e.g. when saving settings)
     const profileChannel = supabase
       .channel("shell-profile-channel")
       .on(
@@ -220,7 +275,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     fetchUnreadNotifications();
 
-    // Realtime listener for incoming or read notifications
     const notifChannel = supabase
       .channel("shell-unread-notifications")
       .on(
@@ -263,14 +317,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen w-full bg-[#e8eaee] dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 p-4 flex flex-col gap-3 font-sans selection:bg-[#f45b95] selection:text-white transition-colors duration-200">
       {/* 1. TOP HEADER / APP BAR */}
       <header className="w-full bg-white dark:bg-neutral-900 rounded-[24px] shadow-sm border border-neutral-200/50 dark:border-neutral-800 flex flex-col overflow-hidden transition-colors duration-200 shrink-0">
-        {/* Top Strip: Dynamic Breadcrumb Path */}
         <div className="w-full px-8 py-1 border-b border-neutral-100 dark:border-neutral-800 flex items-center translate-y-0.5">
           <Breadcrumb />
         </div>
 
-        {/* Main Strip: Avatar, Greeting & Right Action Icons */}
         <div className="w-full px-6 pt-2 pb-3 flex items-center justify-between">
-          {/* Left: Avatar + Title & Dynamic Counters */}
           <div className="flex items-center gap-4">
             <Link
               href={`/profile/${displayHandle}`}
@@ -316,9 +367,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Right: Utility Controls */}
           <div className="flex items-center gap-5 text-neutral-400 dark:text-neutral-500">
-            {/* 1. Moon / Sun: Toggle Light/Dark Mode */}
             <button
               type="button"
               onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
@@ -328,7 +377,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {mounted && resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
 
-            {/* 2. Four Squares: THE NU */}
             <Link
               href="/nu"
               className={`hover:text-neutral-700 dark:hover:text-neutral-200 transition ${
@@ -339,7 +387,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <LayoutGrid size={16} />
             </Link>
 
-            {/* 3. Bell: Notifications with Live Unread Pill Badge */}
             <Link
               href="/notifications"
               className={`relative hover:text-neutral-700 dark:hover:text-neutral-200 transition ${
@@ -348,8 +395,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               title="Notifications"
             >
               <Bell size={16} />
-
-              {/* Dynamic Unread Pill Badge */}
               {unreadCount > 0 && (
                 <span className="absolute -top-2.5 -right-2.5 min-w-4 h-4 px-1 rounded-full bg-[#f45b95] text-white font-black text-[9px] flex items-center justify-center border-2 border-white dark:border-neutral-900 shadow-[0_0_8px_rgba(244,91,149,0.6)] animate-in zoom-in-75 duration-150 leading-none">
                   {unreadCount > 99 ? "99+" : unreadCount}
@@ -357,7 +402,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </Link>
 
-            {/* 4. User: Profile */}
             <Link
               href={`/profile/${displayHandle}`}
               className={`hover:text-neutral-700 dark:hover:text-neutral-200 transition ${
@@ -368,7 +412,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <User size={16} />
             </Link>
 
-            {/* 5. Power: Sign Out */}
             <button
               type="button"
               onClick={() => signOut()}
@@ -386,7 +429,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* SIDEBAR 1: DISCORD-STYLE RAIL */}
         <aside className="w-16 bg-white dark:bg-neutral-900 rounded-[26px] py-4 px-2 shadow-sm border border-neutral-200/50 dark:border-neutral-800 flex flex-col items-center justify-between shrink-0 transition-colors duration-200">
           <div className="flex flex-col items-center gap-2.5 w-full">
-            {/* Logo Squircle with Live Online Green Badge */}
             <div className="relative group cursor-pointer">
               <div className="w-11 h-11 bg-[#f45b95] rounded-[15px] flex items-center justify-center 
                               shadow-[0_0_10px_rgba(244,91,149,0.5),0_0_120px_rgba(244,91,149,0.3)] 
@@ -400,7 +442,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 />
               </div>
 
-              {/* Green Live Online Counter Badge */}
               <span
                 className="absolute -top-1 -right-1 bg-emerald-500 text-white font-extrabold text-[9px] min-w-4 h-4 px-1 rounded-full border-2 border-white dark:border-neutral-900 flex items-center justify-center shadow-sm z-10"
                 title={`${onlineUsersCount} user${onlineUsersCount === 1 ? "" : "s"} online`}
@@ -409,7 +450,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
 
-            {/* Primary Actions */}
             <Link 
               href="/"
               className={`w-10 h-10 rounded-[14px] flex items-center justify-center transition ${
@@ -433,32 +473,46 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <Inbox size={17} />
             </Link>
 
-            {/* Rail Divider */}
             <div className="w-7 h-[1.5px] bg-neutral-100 dark:bg-neutral-800 my-0.5" />
 
-            {/* Story Avatars */}
-            <div className="w-10 h-10 rounded-full bg-neutral-300 overflow-hidden cursor-pointer hover:ring-2 hover:ring-[#f45b95] transition">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
-                alt="Story"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="w-10 h-10 rounded-full bg-neutral-300 overflow-hidden cursor-pointer hover:ring-2 hover:ring-[#f45b95] transition">
-              <img
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80"
-                alt="Story"
-                className="w-full h-full object-cover"
-              />
-            </div>
+            {/* DYNAMIC STORY ICONS: Rendered only when stories exist */}
+            {userStories.map((story) => {
+              const isActive = pathname.startsWith(`/s/${story.id}`);
+              const initial = story.title ? story.title.charAt(0).toUpperCase() : "?";
 
-            {/* Add Story Button */}
-            <button className="w-9 h-9 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-400 flex items-center justify-center hover:border-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 transition">
+              return (
+                <Link
+                  key={story.id}
+                  href={`/s/${story.id}`}
+                  title={story.title}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden transition ${
+                    isActive ? "ring-2 ring-[#f45b95]" : "hover:ring-2 hover:ring-[#f45b95]"
+                  }`}
+                  style={{ backgroundColor: story.color || "#262626" }}
+                >
+                  {story.icon ? (
+                    <img
+                      src={story.icon}
+                      alt={story.title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-white font-bold text-xs">{initial}</span>
+                  )}
+                </Link>
+              );
+            })}
+
+            {/* Add Story Button: Always visible */}
+            <Link
+              href="/stories/new"
+              className="w-9 h-9 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-400 flex items-center justify-center hover:border-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+              title="Create a Story"
+            >
               <Plus size={16} />
-            </button>
+            </Link>
           </div>
 
-          {/* Compass / Explore Button */}
           <Link 
             href="/discover" 
             className="w-9 h-9 rounded-full text-neutral-400 flex items-center justify-center hover:text-neutral-700 dark:hover:text-neutral-200 transition"
@@ -471,14 +525,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* SIDEBAR 2: INNER NAVIGATION LINKS */}
         <aside className="w-56 bg-white dark:bg-neutral-900 rounded-[26px] p-4 shadow-sm border border-neutral-200/50 dark:border-neutral-800 flex flex-col justify-between shrink-0 transition-colors duration-200">
           <div className="flex flex-col gap-4">
-            {/* Wordmark */}
             <div className="px-2 pt-1">
               <span className={`${bagelFont.className} text-2xl text-[#f45b95] tracking-wider`}>
                 nuuvi
               </span>
             </div>
 
-            {/* User Handle Tag as a clickable Link with custom profile color */}
             <Link
               href={`/profile/${displayHandle}`}
               className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-[#f0f2f5] hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 text-neutral-700 dark:text-neutral-200 transition group"
@@ -504,7 +556,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </Link>
 
-            {/* Nav Links */}
             <nav className="flex flex-col gap-0.5 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
               <Link 
                 href="/" 
@@ -565,7 +616,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span>Messages</span>
               </Link>
 
-              {/* Directory Sidebar Item */}
               {(() => {
                 const isDirectoryActive = pathname.startsWith("/directory");
 
@@ -619,7 +669,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span>Discover</span>
               </Link>
 
-            {/* Admin Sidebar Item (Only visible to Admin & Moderator) */}
               {(profile?.role === "admin" || profile?.role === "moderator") && (() => {
                 const isActive = pathname.startsWith("/admin");
 
@@ -647,27 +696,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
 
-          {/* Bottom "Your Stories" Section */}
+          {/* Bottom "Your Stories" Section: Dynamic */}
           <div className="flex flex-col gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
             <div className="flex items-center justify-between px-2 text-[10px] font-bold text-neutral-400 tracking-wider uppercase">
               <span>Your Stories</span>
-              <button className="hover:text-neutral-700 dark:hover:text-neutral-200">
+              <Link href="/stories/new" className="hover:text-neutral-700 dark:hover:text-neutral-200" title="Create Story">
                 <Plus size={12} />
-              </button>
+              </Link>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg cursor-pointer">
-                <div className="w-5 h-5 rounded-md bg-neutral-800 text-white flex items-center justify-center text-[9px] font-bold">
-                  S
+            
+            <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+              {userStories.length === 0 ? (
+                <div className="px-2 py-1 text-[11px] text-neutral-400 italic">
+                  No stories joined yet
                 </div>
-                <span className="truncate text-[11px] font-medium">SELLOUT™</span>
-              </div>
-              <div className="flex items-center gap-2 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg cursor-pointer">
-                <div className="w-5 h-5 rounded-md bg-pink-400 text-white flex items-center justify-center text-[9px] font-bold">
-                  Y
-                </div>
-                <span className="truncate text-[11px] font-medium">you, me, the universe.</span>
-              </div>
+              ) : (
+                userStories.map((story) => (
+                  <Link
+                    key={story.id}
+                    href={`/s/${story.id}`}
+                    className="flex items-center gap-2 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg cursor-pointer transition"
+                  >
+                    <div 
+                      className="w-5 h-5 rounded-md text-white flex items-center justify-center text-[9px] font-bold overflow-hidden shrink-0"
+                      style={{ backgroundColor: story.color || "#262626" }}
+                    >
+                      {story.icon ? (
+                        <img src={story.icon} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        story.title.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className="truncate text-[11px] font-medium">{story.title}</span>
+                  </Link>
+                ))
+              )}
             </div>
           </div>
         </aside>
