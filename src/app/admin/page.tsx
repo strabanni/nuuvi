@@ -83,6 +83,13 @@ export default function AdminPage() {
   const [inviteUses, setInviteUses] = useState(1);
   const [inviteDays, setInviteDays] = useState(7);
 
+  // Resets for user
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{
+    username: string;
+    temporaryPassword: string;
+  } | null>(null);
+
   // Automation (NPCs & Bots) Form[cite: 7]
   const [npcActive, setNpcActive] = useState(true);
   const [npcChance, setNpcChance] = useState(35);
@@ -130,12 +137,15 @@ export default function AdminPage() {
       });
 
       // Load Users[cite: 4]
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, avatar_url, role, created_at, is_suspended")
-        .order("created_at", { ascending: false });
+      // Load users and their actual post counts
+      const { data: profiles, error: profilesError } =
+        await supabase.rpc("admin_list_users");
 
-      if (profiles) setUsersList(profiles as ManagedUser[]);
+      if (profilesError) {
+        console.error("Could not load admin users:", profilesError.message);
+      } else if (profiles) {
+        setUsersList(profiles as ManagedUser[]);
+      }
 
       // Load Stories[cite: 6]
       const { data: stories } = await supabase
@@ -246,6 +256,57 @@ export default function AdminPage() {
       setInviteFor("");
     }
   };
+
+  const handleAdminPasswordReset = async (targetId: string) => {
+  if (!user || currentRole !== "admin") {
+    alert("Only admins can reset passwords.");
+    return;
+  }
+
+  if (targetId === user.id) {
+    alert("Use account settings to change your own password.");
+    return;
+  }
+
+  if (!confirm("Reset this user's password? They will need to change it after signing in.")) {
+    return;
+  }
+
+  setResettingUserId(targetId);
+
+  try {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      throw new Error("Could not verify your session. Please sign in again.");
+    }
+
+    const response = await fetch(
+      `/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Password reset failed.");
+    }
+
+    setResetResult(result);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : "Password reset failed.");
+  } finally {
+    setResettingUserId(null);
+  }
+};
 
   // Delete Story (Admin Only)[cite: 6]
   const handleDeleteStory = async (storyId: string) => {
@@ -434,7 +495,7 @@ export default function AdminPage() {
                       )}
                     </div>
                     <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                      joined {joinedDays}d ago · {u.posts_count || 18} posts
+                      joined {joinedDays}d ago · {u.posts_count ?? 0} posts
                     </span>
                   </div>
                 </div>
@@ -450,6 +511,18 @@ export default function AdminPage() {
                     <Mail size={12} className="text-[#f45b95]" />
                     <span>Resend link</span>
                   </button>
+                  
+                  {/* Reset password*/}
+                  {currentRole === "admin" && (
+                    <button
+                      type="button"
+                      disabled={resettingUserId === u.id || u.id === user?.id}
+                      onClick={() => handleAdminPasswordReset(u.id)}
+                      className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-[11px] font-bold disabled:opacity-50"
+                    >
+                      {resettingUserId === u.id ? "Resetting..." : "Reset password"}
+                    </button>
+                  )}
 
                   {/* Elevate Privileges Dropdown */}
                   {currentRole === "admin" && (
@@ -885,6 +958,57 @@ export default function AdminPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {resetResult && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-password-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl dark:border-neutral-700 dark:bg-[#16171f]">
+            <h2 id="reset-password-title" className="text-lg font-bold">
+              Temporary password created
+            </h2>
+
+            <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+              Give this password to @{resetResult.username} privately. It will be
+              shown here only once.
+            </p>
+
+            <input
+              readOnly
+              value={resetResult.temporaryPassword}
+              className="mt-4 w-full rounded-xl border border-neutral-200 bg-neutral-100 px-3 py-2 font-mono text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              onFocus={(event) => event.currentTarget.select()}
+            />
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(resetResult.temporaryPassword);
+                    alert("Temporary password copied.");
+                  } catch {
+                    alert("Copy failed. Select the password and copy it manually.");
+                  }
+                }}
+                className="rounded-full bg-neutral-900 px-4 py-2 text-sm font-bold text-white dark:bg-neutral-200 dark:text-neutral-900"
+              >
+                Copy password
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setResetResult(null)}
+                className="rounded-full bg-neutral-200 px-4 py-2 text-sm font-bold dark:bg-neutral-800"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

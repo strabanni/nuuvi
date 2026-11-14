@@ -26,6 +26,7 @@ import {
   User,
   Power,
 } from "lucide-react";
+import PasswordChangeGate from "@/components/PasswordChangeGate";
 
 const bagelFont = Bagel_Fat_One({
   weight: "400",
@@ -85,6 +86,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Real User Stories
   const [userStories, setUserStories] = useState<UserStory[]>([]);
 
+  // Reset password
+  const [passwordGate, setPasswordGate] = useState<
+    "checking" | "required" | "clear" | "error"
+  >("checking");
   useEffect(() => {
     if (!user) return;
 
@@ -295,6 +300,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(notifChannel);
     };
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkPasswordGate() {
+      if (!user) {
+        setPasswordGate("clear");
+        return;
+      }
+
+      setPasswordGate("checking");
+
+      const { data, error } = await supabase
+        .from("account_security")
+        .select("must_change_password")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("Could not check password-change requirement:", error.message);
+        setPasswordGate("error");
+        return;
+      }
+
+      setPasswordGate(data?.must_change_password ? "required" : "clear");
+    }
+
+    checkPasswordGate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   
   if (!mounted || authLoading) {
     return (
@@ -306,6 +346,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <AuthModal />;
+  }
+
+  if (passwordGate === "checking") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Checking account…
+      </div>
+    );
+  }
+
+  if (passwordGate === "error") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <p>Could not verify your account status. Please retry.</p>
+        <button type="button" onClick={() => setPasswordGate("checking")}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (passwordGate === "required") {
+    return <PasswordChangeGate onComplete={() => setPasswordGate("clear")} />;
   }
 
   const displayName = profile?.display_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
