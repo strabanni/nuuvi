@@ -840,41 +840,54 @@ export default function MessagesPage() {
                 No conversations yet. Search for a writer to start one.
               </p>
             ) : (
-              conversations.map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => setSelectedId(conversation.id)}
-                  className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${
-                    selectedId === conversation.id
-                      ? "bg-neutral-100 dark:bg-neutral-800"
-                      : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                  }`}
-                >
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#f45b95] text-xs font-bold text-white">
-                    {conversation.other.avatar_url ? (
-                      <img
-                        src={conversation.other.avatar_url}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      initials(conversation.other)
+              conversations.map((conversation) => {
+                // Check if this conversation has unread messages
+                const isUnread =
+                  conversation.last_message_at &&
+                  new Date(conversation.last_message_at) >
+                    new Date((conversation as any).last_read_at || 0);
+
+                return (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => setSelectedId(conversation.id)}
+                    className={`relative flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${
+                      selectedId === conversation.id
+                        ? "bg-neutral-100 dark:bg-neutral-800"
+                        : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                    }`}
+                  >
+                    {/* Unread dot indicator badge */}
+                    {isUnread && (
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full bg-[#f45b95] shadow-[0_0_8px_rgba(244,91,149,0.8)] shrink-0" />
                     )}
-                  </div>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold">
-                      {conversation.other.display_name || conversation.other.username}
+
+                    <div className="flex h-11 w-11 shrink-0 items-center translate-x-1 justify-center overflow-hidden rounded-full bg-[#f45b95] text-xs font-bold text-white ml-2">
+                      {conversation.other.avatar_url ? (
+                        <img
+                          src={conversation.other.avatar_url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        initials(conversation.other)
+                      )}
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold flex items-center justify-between">
+                        {conversation.other.display_name || conversation.other.username}
+                      </span>
+                      <span className={`block truncate text-xs ${isUnread ? "font-bold text-neutral-900 dark:text-white" : "text-neutral-500"}`}>
+                        {conversation.preview}
+                      </span>
                     </span>
-                    <span className="block truncate text-xs text-neutral-500">
-                      {conversation.preview}
+                    <span className="text-[10px] text-neutral-400">
+                      {formatTime(conversation.last_message_at)}
                     </span>
-                  </span>
-                  <span className="text-[10px] text-neutral-400">
-                    {formatTime(conversation.last_message_at)}
-                  </span>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
         </aside>

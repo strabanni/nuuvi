@@ -2,20 +2,20 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import ShowcaseHeroBanner from "@/components/ShowcaseHeroBanner";
 import CreateCharacterModal from "@/components/CreateCharacterModal";
 import {
   Search,
-  CheckCircle2,
   User,
   Plus,
   MapPin,
   Bot,
 } from "lucide-react";
 
-type DirectoryTab = "Me" | "By Writer" | "All Characters" | "NPCs" | "Brands" | "Locations";
+type DirectoryTab = "Your Roster" | "Do You Know Them?" | "Second Glances" | "Brands" | "Walk the City";
 
 interface Character {
   id: string;
@@ -23,7 +23,7 @@ interface Character {
   handle: string;
   avatar_url?: string;
   cover_url?: string;
-  portrait_url?: string; // <--- Added here
+  portrait_url?: string;
   is_verified?: boolean;
   followers_count?: number;
   tagline?: string;
@@ -39,8 +39,9 @@ interface Character {
 
 export default function DirectoryPage() {
   const { user } = useAuth();
+  const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<DirectoryTab>("By Writer");
+  const [activeTab, setActiveTab] = useState<DirectoryTab>("Do You Know Them?");
   const [searchQuery, setSearchQuery] = useState("");
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,6 @@ export default function DirectoryPage() {
     }
 
     if (charData) {
-      // Fetch corresponding profiles for owners
       const userIds = Array.from(new Set(charData.map((c) => c.user_id).filter(Boolean)));
       
       let profileMap: Record<string, any> = {};
@@ -175,30 +175,8 @@ export default function DirectoryPage() {
     );
   }, [filtered, user]);
 
-  const writersGrouped = useMemo(() => {
-    const map = new Map<string, { owner: Character["owner"]; chars: Character[] }>();
-    filtered.forEach((c) => {
-      if (!c.owner) return;
-      const key = c.owner.username;
-      if (!map.has(key)) {
-        map.set(key, { owner: c.owner, chars: [] });
-      }
-      map.get(key)!.chars.push(c);
-    });
-    return Array.from(map.entries());
-  }, [filtered]);
-
-  const alphabeticalGrouped = useMemo(() => {
-    const groups: { [letter: string]: Character[] } = {};
-    filtered.forEach((c) => {
-      const firstChar = (c.name[0] || "#").toUpperCase();
-      const letter = /^[A-Z]$/.test(firstChar) ? firstChar : "#";
-      if (!groups[letter]) groups[letter] = [];
-      groups[letter].push(c);
-    });
-    return Object.keys(groups)
-      .sort()
-      .map((letter) => ({ letter, chars: groups[letter] }));
+  const doYouKnowThemSorted = useMemo(() => {
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
   }, [filtered]);
 
   const npcsList = useMemo(
@@ -213,13 +191,7 @@ export default function DirectoryPage() {
 
   return (
     <div className="w-full flex flex-col gap-6 font-sans pb-24 text-neutral-900 dark:text-white transition-colors duration-200">
-      {/* 1. DIRECTORY HEADER */}
-      <div className="flex flex-col gap-0.5">
-        <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-white">
-          Directory
-        </h1>
-      </div>
-
+      
       {/* 2. ROTATING SHOWCASE HERO BANNER WITH GLOSSY STATS PILL */}
       <ShowcaseHeroBanner>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-5 py-2.5 rounded-[22px] sm:rounded-full bg-black/45 dark:bg-black/55 backdrop-blur-xl border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25),0_8px_24px_rgba(0,0,0,0.5)] w-fit">
@@ -229,33 +201,31 @@ export default function DirectoryPage() {
 
           <span className="hidden sm:inline-block w-1 h-1 rounded-full bg-white/40" />
 
-          {/* Dynamic Stat Chips */}
+          {/* Dynamic Stat Chips with extra spacing */}
           <div className="flex items-center gap-3 text-xs font-bold text-neutral-200">
             <span>
-              <strong className="text-[#f45b95] font-black">{writersCount}</strong>{" "}
-              {writersCount === 1 ? "Writer" : "Writers"}
+              <strong className="text-[#f45b95] font-black">{writersCount}</strong>&nbsp;&nbsp;&nbsp;&nbsp;{writersCount === 1 ? "Writer" : "Writers"}
             </span>
             <span>·</span>
             <span>
-              <strong className="text-[#f45b95] font-black">{charactersCount}</strong>{" "}
-              {charactersCount === 1 ? "Character" : "Characters"}
+              <strong className="text-[#f45b95] font-black">{charactersCount}</strong>&nbsp;&nbsp;&nbsp;&nbsp;{charactersCount === 1 ? "Character" : "Characters"}
             </span>
             <span>·</span>
             <span>
-              <strong className="text-[#f45b95] font-black">{locationsCount}</strong>{" "}
-              {locationsCount === 1 ? "Location" : "Locations"}
+              <strong className="text-[#f45b95] font-black">{locationsCount}</strong>&nbsp;&nbsp;&nbsp;&nbsp;{locationsCount === 1 ? "Location" : "Locations"}
             </span>
           </div>
         </div>
       </ShowcaseHeroBanner>
 
       {/* 3. SEARCH & DIRECTORY CAPSULE PILL BAR */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Shorter search bar */}
+        <div className="relative w-full sm:w-72">
           <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
           <input
             type="text"
-            placeholder="Search names, usernames, taglines..."
+            placeholder="Search names, usernames..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-10 pl-10 pr-4 rounded-full bg-white dark:bg-[#16171f] border border-neutral-200/80 dark:border-white/10 text-xs font-semibold text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none shadow-sm focus:border-[#f45b95]"
@@ -264,7 +234,7 @@ export default function DirectoryPage() {
 
         {/* Tab Switcher */}
         <div className="flex items-center gap-1 p-1 rounded-full bg-[#f0f2f7] dark:bg-[#16171f] border border-neutral-300/70 dark:border-white/[0.08] shadow-sm overflow-x-auto">
-          {(["Me", "By Writer", "All Characters", "NPCs", "Brands", "Locations"] as DirectoryTab[]).map(
+          {(["Your Roster", "Do You Know Them?", "Second Glances", "Brands", "Walk the City"] as DirectoryTab[]).map(
             (tab) => {
               const isActive = activeTab === tab;
               return (
@@ -288,8 +258,8 @@ export default function DirectoryPage() {
 
       {/* 4. TAB CONTENTS */}
 
-      {/* TAB A: ME */}
-      {activeTab === "Me" && (
+      {/* TAB A: YOUR ROSTER */}
+      {activeTab === "Your Roster" && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 translate-x-[15px]">
@@ -304,68 +274,27 @@ export default function DirectoryPage() {
               <span>New character</span>
             </button>
           </div>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 w-full">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(225px,1fr))] gap-5 w-full">
             {myCast.map((char) => (
-              <CharacterCardItem key={char.id} character={char} actionType="edit" />
+              <CharacterCardItem key={char.id} character={char} currentUserId={user?.id} isMeTab={true} />
             ))}
           </div>
         </div>
       )}
 
-      {/* TAB B: BY WRITER */}
-      {activeTab === "By Writer" && (
-        <div className="flex flex-col gap-8">
-          {writersGrouped.map(([username, group]) => (
-            <div key={username} className="flex flex-col gap-3">
-              <div className="flex items-center gap-2.5 px-1">
-                <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-900 border border-white/20 shrink-0">
-                  {group.owner?.avatar_url ? (
-                    <img src={group.owner.avatar_url} alt={username} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-[10px] font-bold text-white flex items-center justify-center w-full h-full">
-                      {username.slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-                {/* Reordered Layout: Username first, then display name + characters count */}
-                <div className="flex flex-col">
-                  <span className="text-xs font-black text-neutral-900 dark:text-white leading-tight">
-                    @{username}
-                  </span>
-                  <span className="text-[11px] text-neutral-400 font-medium">
-                    {group.owner?.display_name} · {group.chars.length} characters
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 w-full">
-                {group.chars.map((char) => (
-                  <CharacterCardItem key={char.id} character={char} actionType="edit" />
-                ))}
-              </div>
-            </div>
-          ))}
+      {/* TAB B: DO YOU KNOW THEM? (Alphabetical view) */}
+      {activeTab === "Do You Know Them?" && (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(225px,1fr))] gap-5 w-full">
+            {doYouKnowThemSorted.map((char) => (
+              <CharacterCardItem key={char.id} character={char} currentUserId={user?.id} isMeTab={false} />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB C: ALL CHARACTERS */}
-      {activeTab === "All Characters" && (
-        <div className="flex flex-col gap-7">
-          {alphabeticalGrouped.map(({ letter, chars }) => (
-            <div key={letter} className="flex flex-col gap-3">
-              <span className="text-xs font-black text-neutral-400 uppercase px-1">{letter}</span>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 w-full">
-                {chars.map((char) => (
-                  <CharacterCardItem key={char.id} character={char} actionType="edit" />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* TAB D: NPCS */}
-      {activeTab === "NPCs" && (
+      {/* TAB C: SECOND GLANCES (NPCs) */}
+      {activeTab === "Second Glances" && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <span className="px-3 py-1 rounded-full bg-white dark:bg-[#16171f] text-xs font-bold border border-neutral-200 dark:border-white/10 shadow-sm">
@@ -385,16 +314,16 @@ export default function DirectoryPage() {
             Anyone can tag these NPCs into their episodes. Mark your own characters as NPCs in their editor.
           </p>
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 w-full">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(225px,1fr))] gap-5 w-full">
             {npcsList.map((char) => (
-              <CharacterCardItem key={char.id} character={char} actionType="edit" />
+              <CharacterCardItem key={char.id} character={char} currentUserId={user?.id} isMeTab={false} />
             ))}
           </div>
         </div>
       )}
 
-      {/* TAB E & F: BRANDS & LOCATIONS PLACEHOLDER */}
-      {(activeTab === "Brands" || activeTab === "Locations") && (
+      {/* TAB D & E: BRANDS & WALK THE CITY (LOCATIONS) PLACEHOLDER */}
+      {(activeTab === "Brands" || activeTab === "Walk the City") && (
         <div className="w-full p-16 rounded-[28px] bg-white dark:bg-[#16171f] border border-neutral-200/80 dark:border-white/[0.08] text-center flex flex-col items-center justify-center gap-3">
           <MapPin size={28} className="text-[#f45b95]" />
           <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
@@ -419,101 +348,104 @@ export default function DirectoryPage() {
   );
 }
 
-// Character Card Component (Fixed 190px × 238px static size, filling grid tracks)
 function CharacterCardItem({
   character,
-  actionType,
+  currentUserId,
+  isMeTab = false,
 }: {
   character: Character;
-  actionType: "view" | "edit";
+  currentUserId?: string;
+  isMeTab?: boolean;
 }) {
+  const router = useRouter();
+  const isOwner = currentUserId && character.user_id === currentUserId;
+  const profileHref = `/phone/${character.id}`;
+  const editHref = `/characters/${character.id}/edit`;
+
+  const showEdit = isMeTab && isOwner;
+
   return (
-    <Link
-      href={
-        actionType === "edit"
-          ? `/characters/${character.id}/edit`
-          : `/phone/${character.handle || character.id}`
-      }
-      className="group relative w-full h-[300px] w-[300px] rounded-[24px] overflow-hidden border border-neutral-200/80 dark:border-white/10 bg-neutral-900 shadow-sm flex flex-col justify-between p-3.5 select-none shrink-0"
+    <div
+      onClick={() => router.push(profileHref)}
+      className="group relative w-full h-[360px] rounded-[30px] overflow-hidden border border-neutral-200/80 dark:border-white/10 bg-neutral-900 shadow-md flex flex-col justify-between p-4.5 select-none shrink-0 cursor-pointer transition-transform hover:-translate-y-1"
     >
-      {/* Background Portrait Image */}
+      {/* Background Portrait / Cover Image */}
       <div className="absolute inset-0 w-full h-full overflow-hidden">
         {character.portrait_url || character.cover_url || character.avatar_url ? (
           <img
             src={character.portrait_url || character.cover_url || character.avatar_url}
             alt={character.name}
-            className="w-full h-full object-cover object-center"
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center font-black text-white/30 text-4xl">
+          <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center font-black text-white/30 text-5xl">
             {character.name.charAt(0).toUpperCase()}
           </div>
         )}
 
-        {/* Ambient Dark Gradient Vignette for Readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-black/60 pointer-events-none" />
       </div>
 
-      {/* Top Header Badge & Character Name */}
-      <div className="relative z-10 flex flex-col items-center">
-        {character.is_npc ? (
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold shadow-sm">
-            <Bot size={11} className="text-[#f45b95]" />
+      {/* Top Header Badge & Character Name with Wrapping and Custom Verified Badge */}
+      <div className="relative z-10 flex flex-col items-center pt-1.5">
+        {character.is_npc && (
+          <div className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 text-white text-xs font-extrabold shadow-sm mb-1">
+            <Bot size={13} className="text-[#f45b95]" />
             <span>NPC</span>
-          </div>
-        ) : character.is_verified ? (
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold shadow-sm">
-            <CheckCircle2 size={11} className="text-sky-400 fill-sky-400/20" />
-            <span>Verified</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-md border border-white/15 text-white text-[10px] font-bold shadow-sm">
-            <User size={10} className="text-neutral-300" />
-            <span>
-              {character.followers_count
-                ? `${character.followers_count.toLocaleString()} followers`
-                : "Following"}
-            </span>
           </div>
         )}
 
-        <h3 className="mt-2 text-center text-sm font-black text-white uppercase tracking-wider drop-shadow-md truncate w-full px-1">
-          {character.name}
+        <h3 className="mt-2 text-center text-xl font-black text-white uppercase tracking-wider drop-shadow-md px-2 leading-tight flex items-center justify-center gap-1.5 flex-wrap">
+          <span className="break-words">{character.name}</span>
+          {character.is_verified && (
+            <span title="Verified Account" className="inline-flex items-center shrink-0">
+              <img
+                src="/verify.png"
+                alt="Verified"
+                className="w-4.5 h-4.5 object-contain drop-shadow-sm"
+              />
+            </span>
+          )}
         </h3>
       </div>
 
       {/* Bottom Freestanding Elements */}
-      <div className="relative z-10 flex items-center justify-between gap-2 pt-2">
-        <div className="flex items-center gap-2 overflow-hidden min-w-0">
-          <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-800 shrink-0 border border-white/20 shadow-sm">
+      <div className="relative z-10 flex items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
+          {/* Thicker border around the small avatar icon */}
+          <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-800 shrink-0 border-2 border-white/60 shadow-sm">
             {character.avatar_url ? (
-              <img
-                src={character.avatar_url}
-                alt={character.name}
-                className="w-full h-full object-cover"
-              />
+              <img src={character.avatar_url} alt={character.name} className="w-full h-full object-cover" />
             ) : (
-              <span className="w-full h-full flex items-center justify-center text-[9px] font-bold text-white">
+              <span className="w-full h-full flex items-center justify-center text-xs font-black text-white">
                 {character.name.charAt(0).toUpperCase()}
               </span>
             )}
           </div>
           <div className="flex flex-col overflow-hidden min-w-0">
-            <span className="text-[10px] font-bold text-white truncate drop-shadow-sm">
+            <span className="text-xs font-extrabold text-white truncate drop-shadow-md">
               @{character.handle || "user"}
             </span>
             {character.tagline && (
-              <span className="text-[8px] text-neutral-300 truncate drop-shadow-sm">
+              <span className="text-[11px] font-semibold text-neutral-200 truncate drop-shadow-md">
                 {character.tagline}
               </span>
             )}
           </div>
         </div>
 
-        <div className="px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-neutral-900 text-[10px] font-black shadow-md shrink-0 transition">
-          {actionType === "edit" ? "Edit" : "View"}
-        </div>
+        {/* Smart Button: EDIT only in the 'Me' tab, VIEW everywhere else */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(showEdit ? editHref : profileHref);
+          }}
+          className="px-4 py-1.5 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 text-xs font-black shadow-lg shrink-0 transition"
+        >
+          {showEdit ? "EDIT" : "VIEW"}
+        </button>
       </div>
-    </Link>
+    </div>
   );
 }

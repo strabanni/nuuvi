@@ -227,23 +227,23 @@ export default function ProfilePage() {
 
             {/* Names & Metadata */}
             <div className="flex flex-col gap-0.5">
-              <h1 className="text-2xl font-black tracking-wider text-white uppercase flex items-center gap-2">
-                <span style={userTextStyle}>
-                  {profile.display_name || profile.user_number}
-                </span>
-              </h1>
-              <div className="flex items-center gap-2 text-xs font-bold text-neutral-400">
-                <span>@{profile.user_number}</span>
-                <span>·</span>
-                <span>JOINED {joinedDate.toUpperCase()}</span>
-                {profile.role && (
-                  <>
-                    <span>·</span>
-                    <span className="text-[#f45b95] uppercase font-extrabold">{profile.role}</span>
-                  </>
-                )}
+                <h1 className="text-2xl font-black tracking-wider text-white uppercase flex items-center gap-2">
+                  <span style={userTextStyle}>
+                    {profile.display_name || profile.username}
+                  </span>
+                </h1>
+                <div className="flex items-center gap-2 text-xs font-bold text-neutral-400">
+                  <span>@{profile.username}</span>
+                  <span>·</span>
+                  <span>JOINED {joinedDate.toUpperCase()}</span>
+                  {profile.role && (
+                    <>
+                      <span>·</span>
+                      <span className="text-[#f45b95] uppercase font-extrabold">{profile.role}</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
           </div>
         </div>
       </div>

@@ -15,14 +15,13 @@ export default function ShowcaseHeroBanner({
   return (
     <div
       /* 
-        Aspect ratio locked: 
-        - 16/7 on mobile for compact vertical ergonomics
-        - 21/9 cinematic ultra-wide on tablet/desktop (min 190px, max 300px)
-        - Shape and corner squircle geometry stay strictly uniform
+        Pure uniform aspect-ratio scaling with NO min-h or max-h caps. 
+        Width and height scale together in exact proportion, 
+        so the image inside stays 100% locked and stable with zero shifting.
       */
-      className="relative w-full aspect-[16/7] sm:aspect-[21/9] min-h-[190px] max-h-[300px] rounded-[28px] sm:rounded-[32px] overflow-hidden bg-neutral-900 border border-neutral-200/60 dark:border-white/10 shadow-sm flex items-end p-5 sm:p-7 shrink-0 transition-[aspect-ratio,height] duration-200"
+      className="relative w-full aspect-[32/9] rounded-[24px] sm:rounded-[28px] overflow-hidden bg-neutral-900 border border-neutral-200/60 dark:border-white/10 shadow-sm flex items-end p-4 sm:p-6 shrink-0"
     >
-      {/* Background Carousel: Locked to full width/height of container */}
+      {/* Background Carousel */}
       {headers.length > 0 ? (
         headers.map((h, idx) => (
           <img

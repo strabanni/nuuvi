@@ -44,47 +44,47 @@ function NotificationsContent() {
   }, [user]);
 
   // Load notifications and subscribe to real-time inserts
-    useEffect(() => {
-      if (!user?.id) return;
-      const userId = user.id;
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
 
-      async function loadNotifications() {
-        setLoading(true);
-        const { data } = await supabase
-          .from("notifications")
-          .select("*")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false });
+    async function loadNotifications() {
+      setLoading(true);
+      const { data } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
 
-        if (data) {
-          setNotifications(data as NotificationItem[]);
-        }
-        setLoading(false);
+      if (data) {
+        setNotifications(data as NotificationItem[]);
       }
+      setLoading(false);
+    }
 
-      loadNotifications();
+    loadNotifications();
 
-      const channel = supabase
-        .channel(`notifications-${userId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "notifications",
-            filter: `user_id=eq.${userId}`,
-          },
-          (payload) => {
-            const newNotif = payload.new as NotificationItem;
-            setNotifications((prev) => [newNotif, ...prev]);
-          }
-        )
-        .subscribe();
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const newNotif = payload.new as NotificationItem;
+          setNotifications((prev) => [newNotif, ...prev]);
+        }
+      )
+      .subscribe();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }, [user?.id]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const handleMarkAllAsRead = async () => {
     if (!user) return;
@@ -180,7 +180,7 @@ function NotificationsContent() {
         </div>
       </div>
 
-      <div className="w-full max-w-2xl flex flex-col gap-2.5">
+      <div className="w-full max-w-2xl flex flex-col gap-3">
         {loading ? (
           <div className="w-full py-16 flex items-center justify-center">
             <div className="w-7 h-7 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" />
@@ -199,24 +199,28 @@ function NotificationsContent() {
             <div
               key={notif.id}
               onClick={() => handleNotificationClick(notif)}
-              className={`w-full flex items-start justify-between p-4 rounded-[22px] border transition shadow-sm cursor-pointer hover:border-[#f45b95]/50 ${
+              className={`relative w-full flex items-center p-4 rounded-[22px] border transition shadow-sm cursor-pointer hover:border-[#f45b95]/50 ${
                 notif.is_read
                   ? "bg-white/70 dark:bg-[#16171f]/70 border-neutral-200/60 dark:border-white/[0.04]"
                   : "bg-white dark:bg-[#16171f] border-[#f45b95]/40 dark:border-[#f45b95]/30 ring-1 ring-[#f45b95]/20"
               }`}
             >
-              <div className="flex items-start gap-3.5">
-                <div className="w-9 h-9 rounded-full bg-[#f45b95]/15 text-[#f45b95] flex items-center justify-center shrink-0 mt-0.5">
+              {/* Pink unread dot positioned on the far left edge of the entire post card */}
+              {!notif.is_read && (
+                <span className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#f45b95] shadow-[0_0_10px_rgba(244,91,149,0.8)]" />
+              )}
+
+              <div className="w-full flex items-center gap-3.5">
+                {/* Vertically centered icon container */}
+                <div className="w-9 h-9 rounded-full bg-[#f45b95]/15 text-[#f45b95] flex items-center justify-center shrink-0">
                   <MessageCircle size={16} />
                 </div>
-                <div className="flex flex-col gap-1">
+                
+                <div className="flex flex-col flex-1 gap-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black text-neutral-900 dark:text-white">
                       {notif.title}
                     </span>
-                    {!notif.is_read && (
-                      <span className="w-2 h-2 rounded-full bg-[#f45b95] ring-2 ring-white dark:ring-[#16171f]" />
-                    )}
                   </div>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
                     {notif.body}

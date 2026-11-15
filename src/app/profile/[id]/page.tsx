@@ -231,12 +231,6 @@ export default function ProfilePage() {
                 </h1>
                 <div className="flex items-center gap-2 text-xs font-bold text-neutral-400">
                   <span>@{profile.username}</span>
-                  {profile.user_number && (
-                    <>
-                      <span>·</span>
-                      <span>MEMBER #{profile.user_number}</span>
-                    </>
-                  )}
                   <span>·</span>
                   <span>JOINED {joinedDate.toUpperCase()}</span>
                 </div>
