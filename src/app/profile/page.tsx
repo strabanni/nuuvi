@@ -16,6 +16,7 @@ interface ProfileData {
   id: string;
   username: string;
   display_name: string;
+  user_number?: number;
   avatar_url?: string;
   banner_url?: string;
   user_colors?: string[];
@@ -228,11 +229,11 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-0.5">
               <h1 className="text-2xl font-black tracking-wider text-white uppercase flex items-center gap-2">
                 <span style={userTextStyle}>
-                  {profile.display_name || profile.username}
+                  {profile.display_name || profile.user_number}
                 </span>
               </h1>
               <div className="flex items-center gap-2 text-xs font-bold text-neutral-400">
-                <span>@{profile.username}</span>
+                <span>@{profile.user_number}</span>
                 <span>·</span>
                 <span>JOINED {joinedDate.toUpperCase()}</span>
                 {profile.role && (

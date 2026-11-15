@@ -42,6 +42,7 @@ interface Profile {
   id: string;
   username: string;
   display_name: string;
+  user_number?: number;
   avatar_url?: string;
   user_colors?: string[];
   is_verified: boolean;
@@ -86,38 +87,56 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Real User Stories
   const [userStories, setUserStories] = useState<UserStory[]>([]);
 
-  // Reset password
+  // Reset password / security gate with failsafe timeout
   const [passwordGate, setPasswordGate] = useState<
     "checking" | "required" | "clear" | "error"
   >("checking");
+
   useEffect(() => {
-    if (!user) return;
+    let cancelled = false;
 
-    const presenceRoom = supabase.channel("online-users", {
-      config: {
-        presence: {
-          key: user.id,
-        },
-      },
-    });
+    async function checkPasswordGate() {
+      if (!user) {
+        setPasswordGate("clear");
+        return;
+      }
 
-    presenceRoom
-      .on("presence", { event: "sync" }, () => {
-        const state = presenceRoom.presenceState();
-        const activeCount = Object.keys(state).length;
-        setOnlineUsersCount(activeCount > 0 ? activeCount : 1);
-      })
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          await presenceRoom.track({
-            online_at: new Date().toISOString(),
-            user_id: user.id,
-          });
+      setPasswordGate("checking");
+
+      const timer = setTimeout(() => {
+        if (!cancelled) {
+          setPasswordGate("clear");
         }
-      });
+      }, 3000);
+
+      try {
+        const { data, error } = await supabase
+          .from("account_security")
+          .select("must_change_password")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        clearTimeout(timer);
+        if (cancelled) return;
+
+        if (error) {
+          setPasswordGate("clear");
+          return;
+        }
+
+        setPasswordGate(data?.must_change_password ? "required" : "clear");
+      } catch {
+        clearTimeout(timer);
+        if (!cancelled) {
+          setPasswordGate("clear");
+        }
+      }
+    }
+
+    checkPasswordGate();
 
     return () => {
-      supabase.removeChannel(presenceRoom);
+      cancelled = true;
     };
   }, [user]);
 
@@ -174,14 +193,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
-  // Fetch profile including user_colors
+  // Fetch profile including user_colors and user_number
   useEffect(() => {
     if (!user) return;
     const currentUser = user;
     async function loadProfile() {
       const { data } = await supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, user_colors, is_verified, role")
+        .select("id, username, display_name, user_number, avatar_url, user_colors, is_verified, role")
         .eq("id", currentUser.id)
         .single();
 
@@ -263,7 +282,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Unread Notifications Count
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  // Unread Messages Indicator State
+  const [hasUnreadMessages, setHasUnreadMessages] = useState<boolean>(false);
 
+  // Fetch unread notifications
   useEffect(() => {
     if (!user) return;
     const currentUser = user;
@@ -301,38 +323,62 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
+  // Fetch unread direct messages status
   useEffect(() => {
-    let cancelled = false;
+    if (!user) return;
+    const currentUser = user;
 
-    async function checkPasswordGate() {
-      if (!user) {
-        setPasswordGate("clear");
-        return;
+    async function checkUnreadMessages() {
+      const { data: convs } = await supabase
+        .from("dm_conversations")
+        .select("id, user_a, user_b, last_message_at")
+        .or(`user_a.eq.${currentUser.id},user_b.eq.${currentUser.id}`);
+
+      if (convs && convs.length > 0) {
+        let unreadFound = false;
+        for (const conv of convs) {
+          const { data: readData } = await supabase
+            .from("dm_reads")
+            .select("last_read_at")
+            .eq("conversation_id", conv.id)
+            .eq("user_id", currentUser.id)
+            .maybeSingle();
+
+          const lastRead = readData?.last_read_at ? new Date(readData.last_read_at) : new Date(0);
+          const lastMsg = new Date(conv.last_message_at);
+
+          if (lastMsg > lastRead) {
+            unreadFound = true;
+            break;
+          }
+        }
+        setHasUnreadMessages(unreadFound);
       }
-
-      setPasswordGate("checking");
-
-      const { data, error } = await supabase
-        .from("account_security")
-        .select("must_change_password")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      if (error) {
-        console.error("Could not check password-change requirement:", error.message);
-        setPasswordGate("error");
-        return;
-      }
-
-      setPasswordGate(data?.must_change_password ? "required" : "clear");
     }
 
-    checkPasswordGate();
+    checkUnreadMessages();
+
+    // Listen for new messages globally to light up the dot instantly
+    const msgChannel = supabase
+      .channel("shell-unread-messages")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "dm_messages",
+        },
+        (payload) => {
+          const newMsg = payload.new as any;
+          if (newMsg.sender_id !== currentUser.id) {
+            setHasUnreadMessages(true);
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      cancelled = true;
+      supabase.removeChannel(msgChannel);
     };
   }, [user]);
   
@@ -375,6 +421,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const displayHandle = profile?.username || user.email?.split("@")[0] || "user";
   const displayAvatar = profile?.avatar_url || user.user_metadata?.avatar_url;
   const userAccentColor = profile?.user_colors?.[0] || "#8e929b";
+  const profileRoute = profile?.user_number ? `/profile/${profile.user_number}` : `/profile/${displayHandle}`;
 
   return (
     <div className="min-h-screen w-full bg-[#e8eaee] dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 p-4 flex flex-col gap-3 font-sans selection:bg-[#f45b95] selection:text-white transition-colors duration-200">
@@ -387,7 +434,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="w-full px-6 pt-2 pb-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
-              href={`/profile/${displayHandle}`}
+              href={profileRoute}
               className="w-12 h-12 rounded-[16px] overflow-hidden bg-neutral-900 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center border border-neutral-200 dark:border-neutral-700 hover:opacity-90 transition"
               title="View profile"
             >
@@ -410,7 +457,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <span className="text-neutral-900 dark:text-white">WELCOME BACK,</span>
                 <Link
-                  href={`/profile/${displayHandle}`}
+                  href={profileRoute}
                   className="uppercase hover:opacity-85 transition-opacity"
                   style={{ color: userAccentColor }}
                 >
@@ -466,7 +513,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
 
             <Link
-              href={`/profile/${displayHandle}`}
+              href={profileRoute}
               className={`hover:text-neutral-700 dark:hover:text-neutral-200 transition ${
                 pathname.startsWith("/profile") ? "text-[#f45b95]" : ""
               }`}
@@ -595,7 +642,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <Link
-              href={`/profile/${displayHandle}`}
+              href={profileRoute}
               className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-[#f0f2f5] hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 text-neutral-700 dark:text-neutral-200 transition group"
               title="View your profile"
             >
@@ -653,14 +700,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
               <Link 
                 href="/notifications" 
-                className={`group flex items-center gap-2.5 px-3 py-1.5 rounded-xl transition ${
+                className={`relative group flex items-center justify-between px-3 py-1.5 rounded-xl transition ${
                   pathname.startsWith("/notifications")
                     ? "bg-neutral-400/20 text-neutral-900 dark:text-white font-bold"
                     : "hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white"
                 }`}
               >
-                <Bell size={15} className={pathname.startsWith("/notifications") ? "text-[#f45b95]" : "text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200"} />
-                <span>Notifications</span>
+                <div className="flex items-center gap-2.5">
+                  <Bell size={15} className={pathname.startsWith("/notifications") ? "text-[#f45b95]" : "text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200"} />
+                  <span>Notifications</span>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-[#f45b95] shadow-[0_0_8px_rgba(244,91,149,0.7)]" />
+                )}
               </Link>
 
               <Link 
@@ -673,10 +725,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
               <Link 
                 href="/messages" 
-                className="group flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white transition"
+                onClick={() => setHasUnreadMessages(false)}
+                className={`relative group flex items-center justify-between px-3 py-1.5 rounded-xl transition ${
+                  pathname.startsWith("/messages")
+                    ? "bg-neutral-400/20 text-neutral-900 dark:text-white font-bold"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white"
+                }`}
               >
-                <MessageSquare size={15} className="text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200" />
-                <span>Messages</span>
+                <div className="flex items-center gap-2.5">
+                  <MessageSquare size={15} className={pathname.startsWith("/messages") ? "text-[#f45b95]" : "text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200"} />
+                  <span>Messages</span>
+                </div>
+                {hasUnreadMessages && (
+                  <span className="w-2 h-2 rounded-full bg-[#f45b95] shadow-[0_0_8px_rgba(244,91,149,0.7)]" />
+                )}
               </Link>
 
               {(() => {

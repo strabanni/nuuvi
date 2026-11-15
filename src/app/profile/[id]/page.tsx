@@ -18,6 +18,7 @@ interface ProfileData {
   id: string;
   username: string;
   display_name: string;
+  user_number?: number;
   avatar_url?: string;
   banner_url?: string;
   user_colors?: string[];
@@ -56,7 +57,7 @@ interface CharacterCard {
 
 export default function ProfilePage() {
   const params = useParams();
-  const routeUsername = params?.username as string | undefined;
+  const routeId = params?.id as string | undefined;
   const { user } = useAuth();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -73,10 +74,10 @@ export default function ProfilePage() {
     async function loadData() {
       setLoading(true);
 
-      // 1. Fetch Profile
+      // 1. Fetch Profile by chronological user_number or current logged-in user
       let query = supabase.from("profiles").select("*");
-      if (routeUsername) {
-        query = query.eq("username", routeUsername);
+      if (routeId) {
+        query = query.eq("user_number", Number(routeId));
       } else if (user) {
         query = query.eq("id", user.id);
       }
@@ -123,7 +124,7 @@ export default function ProfilePage() {
     }
 
     loadData();
-  }, [routeUsername, user]);
+  }, [routeId, user]);
 
   if (loading) {
     return (
@@ -230,6 +231,12 @@ export default function ProfilePage() {
                 </h1>
                 <div className="flex items-center gap-2 text-xs font-bold text-neutral-400">
                   <span>@{profile.username}</span>
+                  {profile.user_number && (
+                    <>
+                      <span>·</span>
+                      <span>MEMBER #{profile.user_number}</span>
+                    </>
+                  )}
                   <span>·</span>
                   <span>JOINED {joinedDate.toUpperCase()}</span>
                 </div>
@@ -372,10 +379,8 @@ function CharacterCardItem({
   return (
     <Link
       href={`/phone/${character.handle || character.id}`}
-      // Added shrink-0 here so the card container never compresses or jumps during window resizing
       className="group relative w-full h-[238px] rounded-[24px] overflow-hidden border border-neutral-200/80 dark:border-white/10 bg-neutral-900 shadow-sm flex flex-col justify-between p-3.5 select-none shrink-0"
     >
-      {/* Background Portrait / Cover Image */}
       <div className="absolute inset-0 w-full h-full overflow-hidden">
         {character.portrait_url || character.cover_url || character.avatar_url ? (
           <img
@@ -389,11 +394,9 @@ function CharacterCardItem({
           </div>
         )}
 
-        {/* Ambient Dark Gradient Vignette */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
       </div>
 
-      {/* Top Header Badge & Character Name */}
       <div className="relative z-10 flex flex-col items-center">
         {character.is_npc ? (
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold shadow-sm">
@@ -421,7 +424,6 @@ function CharacterCardItem({
         </h3>
       </div>
 
-      {/* Bottom Freestanding Elements */}
       <div className="relative z-10 flex items-center justify-between gap-2 pt-2">
         <div className="flex items-center gap-2 overflow-hidden min-w-0">
           <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-800 shrink-0 border border-white/20 shadow-sm">

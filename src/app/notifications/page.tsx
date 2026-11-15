@@ -4,13 +4,15 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import ShowcaseHeroBanner from "@/components/ShowcaseHeroBanner";
-import { Bell, CheckCheck, Trash2, Sparkles } from "lucide-react";
+import { Bell, CheckCheck, Trash2, Sparkles, MessageCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface NotificationItem {
   id: string;
   type: string;
   title: string;
   body: string;
+  link?: string;
   created_at: string;
   is_read: boolean;
   category?: "All" | "For you" | "Activity" | "System";
@@ -18,6 +20,7 @@ interface NotificationItem {
 
 function NotificationsContent() {
   const { user } = useAuth();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [activeTab, setActiveTab] = useState<"All" | "For you" | "Activity" | "System">("All");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -40,26 +43,48 @@ function NotificationsContent() {
     checkRole();
   }, [user]);
 
-  // Load notifications
-  useEffect(() => {
-    async function loadNotifications() {
-      if (!user) return;
-      setLoading(true);
+  // Load notifications and subscribe to real-time inserts
+    useEffect(() => {
+      if (!user?.id) return;
+      const userId = user.id;
 
-      const { data } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      async function loadNotifications() {
+        setLoading(true);
+        const { data } = await supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
 
-      if (data) {
-        setNotifications(data as NotificationItem[]);
+        if (data) {
+          setNotifications(data as NotificationItem[]);
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    }
 
-    loadNotifications();
-  }, [user]);
+      loadNotifications();
+
+      const channel = supabase
+        .channel(`notifications-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const newNotif = payload.new as NotificationItem;
+            setNotifications((prev) => [newNotif, ...prev]);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [user?.id]);
 
   const handleMarkAllAsRead = async () => {
     if (!user) return;
@@ -78,6 +103,22 @@ function NotificationsContent() {
     setNotifications([]);
     window.dispatchEvent(new CustomEvent("notifications-read"));
     await supabase.from("notifications").delete().eq("user_id", user.id);
+  };
+
+  const handleNotificationClick = async (notif: NotificationItem) => {
+    if (!notif.is_read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      );
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notif.id);
+    }
+
+    if (notif.link) {
+      router.push(notif.link);
+    }
   };
 
   const filteredNotifications = notifications.filter((n) => {
@@ -157,27 +198,34 @@ function NotificationsContent() {
           filteredNotifications.map((notif) => (
             <div
               key={notif.id}
-              className={`w-full flex items-start justify-between p-4 rounded-[22px] border transition shadow-sm ${
+              onClick={() => handleNotificationClick(notif)}
+              className={`w-full flex items-start justify-between p-4 rounded-[22px] border transition shadow-sm cursor-pointer hover:border-[#f45b95]/50 ${
                 notif.is_read
                   ? "bg-white/70 dark:bg-[#16171f]/70 border-neutral-200/60 dark:border-white/[0.04]"
                   : "bg-white dark:bg-[#16171f] border-[#f45b95]/40 dark:border-[#f45b95]/30 ring-1 ring-[#f45b95]/20"
               }`}
             >
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black text-neutral-900 dark:text-white">
-                    {notif.title}
-                  </span>
-                  {!notif.is_read && (
-                    <span className="w-2 h-2 rounded-full bg-[#f45b95] ring-2 ring-white dark:ring-[#16171f]" />
-                  )}
+              <div className="flex items-start gap-3.5">
+                <div className="w-9 h-9 rounded-full bg-[#f45b95]/15 text-[#f45b95] flex items-center justify-center shrink-0 mt-0.5">
+                  <MessageCircle size={16} />
                 </div>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                  {notif.body}
-                </p>
-                <span className="text-[10px] text-neutral-400 font-medium">
-                  {new Date(notif.created_at).toLocaleDateString()}
-                </span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-neutral-900 dark:text-white">
+                      {notif.title}
+                    </span>
+                    {!notif.is_read && (
+                      <span className="w-2 h-2 rounded-full bg-[#f45b95] ring-2 ring-white dark:ring-[#16171f]" />
+                    )}
+                  </div>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                    {notif.body}
+                  </p>
+                  <span className="text-[10px] text-neutral-400 font-medium">
+                    {new Date(notif.created_at).toLocaleDateString()} at{" "}
+                    {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
               </div>
             </div>
           ))

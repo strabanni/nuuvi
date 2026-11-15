@@ -3,9 +3,11 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import ImageUploadModal from "@/components/ImageUploadModal";
 import {
   ArrowLeft,
   Check,
+  Image as ImageIcon,
   MessageCircle,
   MoreHorizontal,
   Pencil,
@@ -24,6 +26,7 @@ interface PublicProfile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
+  user_number?: number;
 }
 
 interface Conversation {
@@ -59,6 +62,7 @@ interface MessageAttachment {
   contentType: string;
   name: string;
   signedUrl?: string;
+  localPreviewUrl?: string; // For instant local previews before/during send
 }
 
 interface MessageReaction {
@@ -124,6 +128,36 @@ async function addMessageReactions(messages: DirectMessage[]) {
   }));
 }
 
+// Generate signed URLs for private storage files so they render in chat
+async function addSignedUrls(messages: DirectMessage[]) {
+  return Promise.all(
+    messages.map(async (message) => {
+      if (!message.media || message.media.length === 0) return message;
+
+      const updatedMedia = await Promise.all(
+        message.media.map(async (attachment) => {
+          if (attachment.path.startsWith("http")) {
+            return { ...attachment, signedUrl: attachment.path };
+          }
+
+          const { data, error } = await supabase.storage
+            .from("dm-attachments")
+            .createSignedUrl(attachment.path, 3600); // 1 hour valid
+
+          if (error) {
+            console.error("Error creating signed URL:", error.message);
+            return attachment;
+          }
+
+          return { ...attachment, signedUrl: data.signedUrl };
+        })
+      );
+
+      return { ...message, media: updatedMedia };
+    })
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useAuth();
 
@@ -132,9 +166,9 @@ export default function MessagesPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [search, setSearch] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [draft, setDraft] = useState("");
-  const [loadingConversations, setLoadingConversations] = useState
-  (true);
+  const [loadingConversations, setLoadingConversations] = useState(true);
   const [pendingMedia, setPendingMedia] = useState<MessageAttachment[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -146,6 +180,7 @@ export default function MessagesPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   const selectedConversation =
     conversations.find((conversation) => conversation.id === selectedId) ?? null;
@@ -206,7 +241,6 @@ export default function MessagesPage() {
         (profileRows ?? []).map((profile) => [profile.id, profile])
       );
 
-      // Get the newest message for each conversation to show a preview.
       const loaded: Conversation[] = await Promise.all(
         rows.map(async (row) => {
           const otherId = row.user_a === user.id ? row.user_b : row.user_a;
@@ -266,7 +300,7 @@ export default function MessagesPage() {
 
       const { data, error } = await supabase
         .from("dm_messages")
-        .select("id, conversation_id, sender_id, body, reply_to, created_at, edited_at")
+        .select("id, conversation_id, sender_id, body, media, reply_to, created_at, edited_at")
         .eq("conversation_id", selectedId)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -282,7 +316,8 @@ export default function MessagesPage() {
       const orderedMessages = [...(data ?? [])].reverse() as DirectMessage[];
       const withReplyPreviews = await addReplyPreviews(orderedMessages);
       const withReactions = await addMessageReactions(withReplyPreviews);
-      setMessages(withReactions);
+      const withSignedUrls = await addSignedUrls(withReactions);
+      setMessages(withSignedUrls);
 
       const { error: readError } = await supabase
         .from("dm_reads")
@@ -311,83 +346,115 @@ export default function MessagesPage() {
 
   // Live updates for selected conversation
   useEffect(() => {
-  if (!user || !selectedId) return;
+    if (!user || !selectedId) return;
 
-  const channel = supabase
-    .channel(`dm-messages-${selectedId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "dm_messages",
-        filter: `conversation_id=eq.${selectedId}`,
-      },
-      async (payload) => {
-        if (payload.eventType === "INSERT") {
-          const incoming = payload.new as DirectMessage;
-          const [messageWithPreview] = await addReplyPreviews([incoming]);
+    const channel = supabase
+      .channel(`dm-messages-${selectedId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "dm_messages",
+          filter: `conversation_id=eq.${selectedId}`,
+        },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const incoming = payload.new as DirectMessage;
+            const [messageWithPreview] = await addReplyPreviews([incoming]);
+            const [messageWithReaction] = await addMessageReactions([messageWithPreview]);
+            const [finalMessage] = await addSignedUrls([messageWithReaction]);
 
-          setMessages((current) => {
-            if (current.some((message) => message.id === messageWithPreview.id)) {
-              return current;
-            }
+            setMessages((current) => {
+              if (current.some((message) => message.id === finalMessage.id)) {
+                return current;
+              }
 
-            return [...current, messageWithPreview].sort(
-              (a, b) =>
-                new Date(a.created_at).getTime() -
-                new Date(b.created_at).getTime()
+              return [...current, finalMessage].sort(
+                (a, b) =>
+                  new Date(a.created_at).getTime() -
+                  new Date(b.created_at).getTime()
+              );
+            });
+          }
+
+          if (payload.eventType === "UPDATE") {
+            const updated = payload.new as DirectMessage;
+            const [finalUpdated] = await addSignedUrls([updated]);
+
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === finalUpdated.id ? finalUpdated : message
+              )
             );
-          });
+          }
+
+          if (payload.eventType === "DELETE") {
+            const deleted = payload.old as Partial<DirectMessage>;
+
+            setMessages((current) =>
+              current.filter((message) => message.id !== deleted.id)
+            );
+          }
         }
+      )
+      .subscribe();
 
-        if (payload.eventType === "UPDATE") {
-          const updated = payload.new as DirectMessage;
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user, selectedId]);
 
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === updated.id ? updated : message
-            )
-          );
-        }
+  // Live Auto-Suggestions & Search for writers (Loads top 3 initially on focus, filters as user types starting with query)
+  useEffect(() => {
+    let cancelled = false;
 
-        if (payload.eventType === "DELETE") {
-          const deleted = payload.old as Partial<DirectMessage>;
-
-          setMessages((current) =>
-            current.filter((message) => message.id !== deleted.id)
-          );
-        }
+    async function fetchWriterSuggestions() {
+      if (!user || !isSearchFocused) {
+        if (!isSearchFocused && !search) setProfiles([]);
+        return;
       }
-    )
-    .subscribe();
 
-  return () => {
-    void supabase.removeChannel(channel);
-  };
-}, [user, selectedId]);
+      const searchTerm = search.trim();
+      let query = supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .neq("id", user.id)
+        .limit(3);
 
-  // Search writers by username.
-  const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!user || !search.trim()) return;
+      if (searchTerm) {
+        query = query.or(
+          `username.ilike.${searchTerm}%,display_name.ilike.${searchTerm}%`
+        );
+      } else {
+        // Default top 3 recent/active profiles when search is empty and focused
+        query = query.order("updated_at", { ascending: false, nullsFirst: false });
+      }
 
-    setErrorMessage("");
+      const { data, error } = await query;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .ilike("username", `%${search.trim()}%`)
-      .neq("id", user.id)
-      .limit(10);
+      if (cancelled) return;
 
-    if (error) {
-      setErrorMessage(`Could not search writers: ${error.message}`);
-      return;
+      if (error) {
+        // Fallback if updated_at isn't present
+        const { data: fallbackData } = await supabase
+          .from("profiles")
+          .select("id, username, display_name, avatar_url")
+          .neq("id", user.id)
+          .limit(3);
+        if (!cancelled) setProfiles(fallbackData ?? []);
+        return;
+      }
+
+      setProfiles(data ?? []);
     }
 
-    setProfiles(data ?? []);
-  };
+    fetchWriterSuggestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [search, isSearchFocused, user]);
 
   // Create or open a direct conversation.
   const handleOpenConversation = async (profile: PublicProfile) => {
@@ -405,6 +472,7 @@ export default function MessagesPage() {
 
     setProfiles([]);
     setSearch("");
+    setIsSearchFocused(false);
     setSelectedId(conversationId);
   };
 
@@ -435,11 +503,12 @@ export default function MessagesPage() {
     }
 
     setDraft("");
+    setPendingMedia([]);
     setReplyingTo(null);
 
     const { data, error: reloadError } = await supabase
       .from("dm_messages")
-      .select("id, conversation_id, sender_id, body, reply_to, created_at, edited_at")
+      .select("id, conversation_id, sender_id, body, media, reply_to, created_at, edited_at")
       .eq("conversation_id", selectedId)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -447,10 +516,11 @@ export default function MessagesPage() {
     if (reloadError) {
       setErrorMessage(`Message sent, but could not refresh the conversation: ${reloadError.message}`);
     } else {
-    const orderedMessages = await addReplyPreviews(
-      [...(data ?? [])].reverse() as DirectMessage[]
-    );
-    setMessages(await addMessageReactions(orderedMessages));
+      const orderedMessages = await addReplyPreviews(
+        [...(data ?? [])].reverse() as DirectMessage[]
+      );
+      const withReactions = await addMessageReactions(orderedMessages);
+      setMessages(await addSignedUrls(withReactions));
     }
 
     setSending(false);
@@ -483,7 +553,7 @@ export default function MessagesPage() {
       })
       .eq("id", messageId)
       .eq("sender_id", user.id)
-      .select("id, conversation_id, sender_id, body, reply_to, created_at, edited_at")
+      .select("id, conversation_id, sender_id, body, media, reply_to, created_at, edited_at")
       .single();
 
     if (error) {
@@ -492,10 +562,11 @@ export default function MessagesPage() {
     }
 
     const [messageWithPreview] = await addReplyPreviews([data as DirectMessage]);
+    const [finalMessage] = await addSignedUrls([messageWithPreview]);
 
     setMessages((current) =>
       current.map((message) =>
-        message.id === messageId ? messageWithPreview : message
+        message.id === messageId ? finalMessage : message
       )
     );
 
@@ -506,7 +577,41 @@ export default function MessagesPage() {
     setEditingDraft("");
   };
 
-  // Attachments
+  // Handle Clipboard Paste (Ctrl+V / Cmd+V images directly into chat)
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (!file || !user || !selectedId) continue;
+
+        e.preventDefault();
+        setUploadingMedia(true);
+        try {
+          const fileExt = file.name.split(".").pop() || "png";
+          const path = `${selectedId}/${user.id}/${crypto.randomUUID()}.${fileExt}`;
+          const { error } = await supabase.storage
+            .from("dm-attachments")
+            .upload(path, file, { contentType: file.type });
+
+          if (error) throw error;
+
+          const localPreviewUrl = URL.createObjectURL(file);
+
+          setPendingMedia((current) => [
+            ...current,
+            { path, contentType: file.type, name: file.name || "pasted-image.png", localPreviewUrl },
+          ]);
+        } catch (err: any) {
+          setErrorMessage(`Paste upload failed: ${err.message}`);
+        } finally {
+          setUploadingMedia(false);
+        }
+      }
+    }
+  };
+
+  // Attachments via File Input
   const handleAttachmentSelect = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -553,10 +658,13 @@ export default function MessagesPage() {
 
         if (error) throw error;
 
+        const localPreviewUrl = URL.createObjectURL(file);
+
         uploaded.push({
           path,
           contentType: file.type,
           name: file.name,
+          localPreviewUrl,
         });
       }
 
@@ -568,6 +676,19 @@ export default function MessagesPage() {
     } finally {
       setUploadingMedia(false);
     }
+  };
+
+  // Handle Image selected from ImageUploadModal (local file or URL link)
+  const handleModalImageSelect = (urlOrPath: string) => {
+    const isUrl = urlOrPath.startsWith("http");
+    setPendingMedia((current) => [
+      ...current,
+      {
+        path: urlOrPath,
+        contentType: isUrl ? "image/url" : "image/png",
+        name: isUrl ? "Linked Image" : "Uploaded Image",
+      },
+    ]);
   };
 
   const handleDeleteMessage = async (messageId: string) => {
@@ -649,10 +770,10 @@ export default function MessagesPage() {
             selectedId ? "hidden md:flex" : "flex"
           } md:border-r`}
         >
-          <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+          <div className="relative border-b border-neutral-200 p-4 dark:border-neutral-800">
             <h1 className="mb-3 text-xl font-black">Messages</h1>
 
-            <form onSubmit={handleSearch} className="flex gap-2">
+            <div className="relative flex gap-2">
               <label className="relative min-w-0 flex-1">
                 <span className="sr-only">Search writers by username</span>
                 <Search
@@ -662,26 +783,29 @@ export default function MessagesPage() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => {
+                    // Slight delay to allow clicking a profile suggestion
+                    setTimeout(() => setIsSearchFocused(false), 200);
+                  }}
                   placeholder="Find a writer"
                   className="h-10 w-full rounded-full bg-neutral-100 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#f45b95] dark:bg-neutral-900"
                 />
               </label>
-              <button
-                type="submit"
-                className="rounded-full bg-neutral-900 px-4 text-xs font-bold text-white dark:bg-neutral-200 dark:text-neutral-900"
-              >
-                Search
-              </button>
-            </form>
+            </div>
 
-            {profiles.length > 0 && (
-              <div className="mt-3 flex flex-col gap-1">
+            {isSearchFocused && profiles.length > 0 && (
+              <div className="absolute left-4 right-4 top-full z-30 mt-1 flex flex-col gap-1 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                <div className="px-2 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  {search.trim() ? "Matching Writers" : "Suggested Writers"}
+                </div>
                 {profiles.map((profile) => (
                   <button
                     key={profile.id}
                     type="button"
+                    onMouseDown={(e) => e.preventDefault()} // Prevent blur before click triggers
                     onClick={() => handleOpenConversation(profile)}
-                    className="flex items-center gap-3 rounded-xl p-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    className="flex items-center gap-3 rounded-xl p-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
                   >
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#f45b95] text-xs font-bold text-white">
                       {profile.avatar_url ? (
@@ -696,10 +820,10 @@ export default function MessagesPage() {
                     </div>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold">
-                        {profile.display_name || profile.username}
+                        {profile.display_name || profile.user_number}
                       </span>
                       <span className="block truncate text-xs text-neutral-500">
-                        @{profile.username}
+                        @{profile.user_number}
                       </span>
                     </span>
                   </button>
@@ -807,12 +931,6 @@ export default function MessagesPage() {
                 ) : (
                   messages.map((message) => {
                     const mine = message.sender_id === user?.id;
-                    const groupedReactions = (message.reactions ?? []).reduce<
-                      Record<string, MessageReaction[]>
-                    >((groups, reaction) => {
-                      (groups[reaction.emoji] ??= []).push(reaction);
-                      return groups;
-                    }, {});
 
                     return (
                       <div
@@ -851,6 +969,36 @@ export default function MessagesPage() {
                                 <div className="mt-0.5 line-clamp-2 opacity-80">
                                   {message.replyPreview.body}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Render attached media inside bubble using signedUrl */}
+                            {message.media && message.media.length > 0 && (
+                              <div className="mb-2 flex flex-wrap gap-2">
+                                {message.media.map((attachment, idx) => {
+                                  const displayUrl = attachment.signedUrl || attachment.path;
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900"
+                                    >
+                                      {attachment.contentType?.startsWith("video/") ? (
+                                        <video
+                                          src={displayUrl}
+                                          controls
+                                          className="max-h-48 max-w-full object-cover"
+                                        />
+                                      ) : (
+                                        <img
+                                          src={displayUrl}
+                                          alt={attachment.name || "Attachment"}
+                                          className="max-h-48 max-w-full object-cover"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
 
@@ -904,38 +1052,38 @@ export default function MessagesPage() {
                               </>
                             )}
                             {(message.reactions?.length ?? 0) > 0 && (
-                            <div
-                              className={`absolute -top-3 z-10 flex max-w-40 flex-wrap gap-0.5 rounded-full border border-neutral-200 bg-white px-2 py-1 text-xs shadow-sm dark:border-neutral-700 dark:bg-[#262629] ${
-                                mine ? "-left-2" : "-right-2"
-                              }`}
-                            >
-                              {[...new Set(message.reactions?.map((reaction) => reaction.emoji))].map(
-                                (emoji) => {
-                                  const group = message.reactions?.filter(
-                                    (reaction) => reaction.emoji === emoji
-                                  ) ?? [];
-                                  const reactedByMe = group.some(
-                                    (reaction) => reaction.user_id === user?.id
-                                  );
+                              <div
+                                className={`absolute -top-3 z-10 flex max-w-40 flex-wrap gap-0.5 rounded-full border border-neutral-200 bg-white px-2 py-1 text-xs shadow-sm dark:border-neutral-700 dark:bg-[#262629] ${
+                                  mine ? "-left-2" : "-right-2"
+                                }`}
+                              >
+                                {[...new Set(message.reactions?.map((reaction) => reaction.emoji))].map(
+                                  (emoji) => {
+                                    const group = message.reactions?.filter(
+                                      (reaction) => reaction.emoji === emoji
+                                    ) ?? [];
+                                    const reactedByMe = group.some(
+                                      (reaction) => reaction.user_id === user?.id
+                                    );
 
-                                  return (
-                                    <span
-                                      key={emoji}
-                                      className={reactedByMe ? "text-[#007aff]" : ""}
-                                      title={`${group.length} reaction${group.length === 1 ? "" : "s"}`}
-                                    >
-                                      {emoji}
-                                      {group.length > 1 && (
-                                        <span className="ml-0.5 text-[10px] text-neutral-500">
-                                          {group.length}
-                                        </span>
-                                      )}
-                                    </span>
-                                  );
-                                }
-                              )}
-                            </div>
-                          )}
+                                    return (
+                                      <span
+                                        key={emoji}
+                                        className={reactedByMe ? "text-[#007aff]" : ""}
+                                        title={`${group.length} reaction${group.length === 1 ? "" : "s"}`}
+                                      >
+                                        {emoji}
+                                        {group.length > 1 && (
+                                          <span className="ml-0.5 text-[10px] text-neutral-500">
+                                            {group.length}
+                                          </span>
+                                        )}
+                                      </span>
+                                    );
+                                  }
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1046,6 +1194,8 @@ export default function MessagesPage() {
                 <label className="sr-only" htmlFor="dm-message">
                   Message
                 </label>
+
+                {/* Replying banner */}
                 {replyingTo && (
                   <div className="absolute bottom-full left-3 right-3 mb-2 flex items-center justify-between rounded-xl bg-neutral-100 p-2 text-xs dark:bg-neutral-800">
                     <span className="truncate">
@@ -1060,6 +1210,36 @@ export default function MessagesPage() {
                     </button>
                   </div>
                 )}
+
+                {/* Pending Media Preview Drawer */}
+                {pendingMedia.length > 0 && (
+                  <div className="absolute bottom-full left-3 right-3 mb-2 flex items-center gap-2 overflow-x-auto rounded-xl bg-neutral-100 p-2 dark:bg-neutral-800">
+                    {pendingMedia.map((media, idx) => {
+                      const previewUrl = media.localPreviewUrl || media.path;
+
+                      return (
+                        <div
+                          key={idx}
+                          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-neutral-300 dark:border-neutral-700"
+                        >
+                          <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPendingMedia((current) =>
+                                current.filter((_, i) => i !== idx)
+                              )
+                            }
+                            className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[10px] text-white hover:bg-black"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1069,20 +1249,34 @@ export default function MessagesPage() {
                   onChange={handleAttachmentSelect}
                 />
 
+                {/* Local file picker button */}
                 <button
                   type="button"
                   disabled={uploadingMedia}
                   onClick={() => fileInputRef.current?.click()}
-                  aria-label="Attach photos or videos"
-                  title={uploadingMedia ? "Uploading…" : "Attach photos or videos"}
+                  aria-label="Attach local files"
+                  title={uploadingMedia ? "Uploading…" : "Attach local files"}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 disabled:opacity-50 dark:bg-neutral-900 dark:text-neutral-300"
                 >
                   {uploadingMedia ? "…" : "+"}
                 </button>
+
+                {/* Modal Trigger Button (Upload via local / link / popup) */}
+                <button
+                  type="button"
+                  onClick={() => setIsImageModalOpen(true)}
+                  aria-label="Open image upload modal"
+                  title="Upload image or link URL"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300 hover:text-[#007aff]"
+                >
+                  <ImageIcon size={18} />
+                </button>
+
                 <textarea
                   id="dm-message"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  onPaste={handlePaste}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -1090,7 +1284,7 @@ export default function MessagesPage() {
                     }
                   }}
                   rows={1}
-                  placeholder="iMessage"
+                  placeholder="iMessage or paste image (Ctrl+V)"
                   className="max-h-32 min-h-11 flex-1 resize-y rounded-2xl bg-neutral-100 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#007aff] dark:bg-neutral-900"
                 />
                 <button
@@ -1111,6 +1305,26 @@ export default function MessagesPage() {
           )}
         </section>
       </div>
+
+      {/* Reusable Image Upload Modal (Shared with profile settings / character creation) */}
+      <ImageUploadModal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        onSelectImage={(urlOrPath) => {
+          const isUrl = urlOrPath.startsWith("http");
+          setPendingMedia((current) => [
+            ...current,
+            {
+              path: urlOrPath,
+              contentType: isUrl ? "image/url" : "image/png",
+              name: isUrl ? "Linked Image" : "Uploaded Image",
+            },
+          ]);
+        }}
+        title="Attach Media to Message"
+        bucketName="dm-attachments"
+        pathPrefix={selectedId && user ? `${selectedId}/${user.id}` : "uploads"}
+      />
 
       {errorMessage && (
         <div
