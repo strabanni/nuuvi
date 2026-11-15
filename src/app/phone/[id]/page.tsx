@@ -124,18 +124,6 @@ interface CharacterProfile {
   trivia?: string;
 }
 
-const PRESET_DETAIL_KEYS = [
-  "Age",
-  "Birthday",
-  "Zodiac",
-  "Pronouns",
-  "Gender",
-  "Sexual Orientation",
-  "Occupation",
-  "Relationship Status",
-  "Face claim",
-];
-
 const PRESET_PALETTES = [
   ["#f45b95", "#c084fc", "#93c5fd"],
   ["#ec4899", "#a855f7", "#6366f1"],
@@ -182,6 +170,48 @@ const getPostImages = (post: any) => {
   return [];
 };
 
+const generateContextualComments = (post: any) => {
+  const caption = (post.content || "").toLowerCase();
+  const location = (post.location || "").toLowerCase();
+  const mentionRelation = post.mention_relation || "friend";
+
+  let basePool = [
+    { name: "tunde_pics", handle: "tunde_pics", text: "Stop whoever's taking your pictures deserves a raise", time: "now", likes: 18, isChar: false, verified: false },
+    { name: "marcus_tv", handle: "marcus_tv", text: "Okay is there a part 2 🔥", time: "now", likes: 12, isChar: false, verified: false },
+    { name: "luciaxarchive", handle: "luciaxarchive", text: "Girl needed this on my feed today, thank u!!", time: "now", likes: 9, isChar: false, verified: false },
+    { name: "siobhan_files", handle: "siobhan_files", text: "Nobody tell my mom I'm on here instead of studying 🫶", time: "now", likes: 5, isChar: false, verified: false },
+    { name: "ardelldaily6", handle: "ardelldaily6", text: "The vibe here is unmatched", time: "now", likes: 6, isChar: false, verified: false },
+    { name: "fan_no1", handle: "fan_no1", text: "Obsessed with this look omg", time: "now", likes: 4, isChar: false, verified: false },
+    { name: "stan_acc", handle: "stan_acc", text: "We will be framing this immediately", time: "now", likes: 2, isChar: false, verified: false },
+    { name: "foyaen_lover", handle: "foyaen_lover", text: "Iconic behavior honestly", time: "now", likes: 3, isChar: false, verified: false },
+    { name: "vibe_check", handle: "vibe_check", text: "Can't cope with this era", time: "now", likes: 1, isChar: false, verified: false },
+    { name: "real_talk", handle: "real_talk", text: "Legendary status", time: "now", likes: 7, isChar: false, verified: false },
+    { name: "gossip_girl", handle: "gossip_girl", text: "Spilling tea as always", time: "now", likes: 11, isChar: false, verified: false },
+    { name: "midnight_oil", handle: "midnight_oil", text: "This is pure art", time: "now", likes: 2, isChar: false, verified: false },
+    { name: "charlie_x", handle: "charlie_x", text: "Speechless rn", time: "now", likes: 4, isChar: false, verified: false },
+    { name: "extra_fan", handle: "extra_fan", text: "And another one! Iconic.", time: "now", likes: 8, isChar: false, verified: false },
+    { name: "hater_1", handle: "hater_1", text: "Filter is a bit much ngl", time: "now", likes: 14, isChar: false, verified: false },
+  ];
+
+  if (location.includes("nyc") || location.includes("city")) {
+    basePool.unshift({ name: "city_insider", handle: "city_insider", text: "Only you could make the city look like this", time: "now", likes: 22, isChar: false, verified: false });
+  }
+
+  if (mentionRelation === "ex") {
+    basePool.unshift({ name: "watcher_01", handle: "watcher_01", text: "Bold of you to post this after everything", time: "now", likes: 45, isChar: false, verified: false });
+  } else if (mentionRelation === "rival") {
+    basePool.unshift({ name: "frenemy_report", handle: "frenemy_report", text: "Trying a bit too hard here aren't we", time: "now", likes: 31, isChar: false, verified: false });
+  } else if (mentionRelation === "best_friend") {
+    basePool.unshift({ name: "bff_official", handle: "bff_official", text: "THE CO-SIGN OF A CENTURY. MY TWIN.", time: "now", likes: 52, isChar: false, verified: true });
+  }
+
+  if (caption.includes("coffee") || caption.includes("cafe")) {
+    basePool.unshift({ name: "caffeine_fiend", handle: "caffeine_fiend", text: "Need to join you next time", time: "now", likes: 15, isChar: false, verified: false });
+  }
+
+  return basePool.slice(0, 15);
+};
+
 export default function CharacterProfilePage() {
   const params = useParams();
   const characterId = params?.id as string;
@@ -199,8 +229,12 @@ export default function CharacterProfilePage() {
   const [totalWordsWritten, setTotalWordsWritten] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
 
-  // Writer's characters for New Post & Commenting
+  // Writer's characters & platform characters for @mention autocomplete
   const [writerCharacters, setWriterCharacters] = useState<any[]>([]);
+  const [allPlatformChars, setAllPlatformChars] = useState<any[]>([]);
+  const [mentionSuggestions, setMentionSuggestions] = useState<any[]>([]);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+
   const [postingAsCharacterId, setPostingAsCharacterId] = useState("");
   const [commentingAsCharacterId, setCommentingAsCharacterId] = useState("");
   const [isManageFollowsOpen, setIsManageFollowsOpen] = useState(false);
@@ -215,9 +249,17 @@ export default function CharacterProfilePage() {
   const [postCommentsMap, setPostCommentsMap] = useState<Record<string, any[]>>({});
   const [isSongPlaying, setIsSongPlaying] = useState(false);
   
+  // Reply State per comment ID
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [replyInput, setReplyInput] = useState("");
+  const [replyDate, setReplyDate] = useState("");
+  const [replyingAsCharacterId, setReplyingAsCharacterId] = useState("");
+  const [replyingCharacterDropdownOpen, setReplyingCharacterDropdownOpen] = useState(false);
+
   // Like as Character Menu State per post ID
   const [isLikeMenuOpen, setIsLikeMenuOpen] = useState(false);
   const [postLikedByMap, setPostLikedByMap] = useState<Record<string, any[]>>({});
+  const [isAllLikesModalOpen, setIsAllLikesModalOpen] = useState(false);
 
   // Follows popup state
   const [followModalType, setFollowModalType] = useState<"followers" | "following" | null>(null);
@@ -254,6 +296,7 @@ export default function CharacterProfilePage() {
   const [streamViewers, setStreamViewers] = useState("");
   const [postLocation, setPostLocation] = useState("");
   const [behindTheStory, setBehindTheStory] = useState("");
+  const [mentionRelation, setMentionRelation] = useState<string>("friend");
   
   const [showPollConfig, setShowPollConfig] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
@@ -263,11 +306,6 @@ export default function CharacterProfilePage() {
   const [songTitle, setSongTitle] = useState("");
   const [songArtist, setSongArtist] = useState("");
   const [songLink, setSongLink] = useState("");
-
-  const [showLikesConfig, setShowLikesConfig] = useState(false);
-  const [manualLikes, setManualLikes] = useState("");
-  const [manualComments, setManualComments] = useState("");
-  const [postDate, setPostDate] = useState("");
 
   const [publishingPost, setPublishingPost] = useState(false);
 
@@ -285,7 +323,6 @@ export default function CharacterProfilePage() {
   const [bio, setBio] = useState("");
   const [customFollowers, setCustomFollowers] = useState("");
   const [customFollowing, setCustomFollowing] = useState("");
-  const [details, setDetails] = useState<DetailItem[]>([{ key: "Age", value: "" }, { key: "Pronouns", value: "" }]);
   const [isVerified, setIsVerified] = useState(false);
   const [isBrand, setIsBrand] = useState(false);
   const [isNpc, setIsNpc] = useState(false);
@@ -330,7 +367,6 @@ export default function CharacterProfilePage() {
       setBio(charData.bio || "");
       setCustomFollowers(charData.followers_count ? String(charData.followers_count) : "");
       setCustomFollowing(charData.following_count ? String(charData.following_count) : "");
-      setDetails(Array.isArray(charData.details) && charData.details.length > 0 ? charData.details : [{ key: "Age", value: "" }, { key: "Pronouns", value: "" }]);
       setIsVerified(!!charData.is_verified);
       setIsBrand(!!charData.is_brand);
       setIsNpc(!!charData.is_npc);
@@ -360,14 +396,21 @@ export default function CharacterProfilePage() {
       setTotalWordsWritten(totalWords);
       setEpisodePostsCount(postData?.length || 0);
 
-      if (charData.user_id) {
+      const { data: allChars } = await supabase
+        .from("characters")
+        .select("id, name, handle, avatar_url");
+      setAllPlatformChars(allChars || []);
+
+      if (user) {
         const { data: userChars } = await supabase
           .from("characters")
           .select("id, name, avatar_url, user_colors, followers_count, is_verified, handle, is_npc")
-          .eq("user_id", charData.user_id);
+          .eq("user_id", user.id);
+          
         setWriterCharacters(userChars || []);
         if (userChars && userChars.length > 0) {
           setCommentingAsCharacterId(userChars[0].id);
+          setReplyingAsCharacterId(userChars[0].id);
 
           const charIds = userChars.map((c) => c.id);
           const { data: followsData } = await supabase
@@ -382,33 +425,48 @@ export default function CharacterProfilePage() {
             statusMap[c.id] = followingIds.has(c.id);
           });
           setWriterFollowStatusMap(statusMap);
+          
+          // Set overall follow state if at least one of the user's characters is following
+          setIsFollowing(followingIds.size > 0);
         }
-      }
-
-      if (user && user.id !== charData.user_id) {
-        const { data: followData } = await supabase
-          .from("character_follows")
-          .select("*")
-          .eq("follower_id", user.id)
-          .eq("character_id", characterId)
-          .maybeSingle();
-
-        setIsFollowing(!!followData);
       }
 
       setLoading(false);
     }
 
     loadCharacterData();
+
+    const followsChannel = supabase
+      .channel(`public:character_follows:character_id=eq.${characterId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "character_follows", filter: `character_id=eq.${characterId}` },
+        async () => {
+          const { data: updatedChar } = await supabase
+            .from("characters")
+            .select("followers_count, following_count")
+            .eq("id", characterId)
+            .maybeSingle();
+
+          if (updatedChar) {
+            setCharacter((prev) => prev ? { ...prev, followers_count: updatedChar.followers_count } : null);
+          }
+          if (followModalType) {
+            openFollowsModal(followModalType);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(followsChannel);
+    };
   }, [characterId, user]);
 
   const isOwner = user && character && user.id === character.user_id;
 
   const activeColors = palette.slice(0, colorCount);
   const isGradient = colorCount > 1;
-  const gradientString = isGradient
-    ? `linear-gradient(135deg, ${activeColors.join(", ")})`
-    : activeColors[0];
 
   const charColors = character?.is_npc || !character?.user_colors?.length ? ["#737373"] : character.user_colors;
   const isCharMulti = !character?.is_npc && charColors.length > 1;
@@ -421,6 +479,8 @@ export default function CharacterProfilePage() {
   const commentCharColors = commentingChar?.is_npc || !commentingChar?.user_colors?.length ? ["#737373"] : commentingChar.user_colors;
   const isCommentCharMulti = !commentingChar?.is_npc && commentCharColors.length > 1;
   const commentButtonGradient = commentingChar?.is_npc ? "#52525b" : (isCommentCharMulti ? `linear-gradient(135deg, ${commentCharColors.join(", ")})` : commentCharColors[0]);
+
+  const replyingChar = writerCharacters.find((c) => c.id === replyingAsCharacterId);
 
   const renderAkaFormatted = (text: string) => {
     if (!text.trim()) return <span>{character?.name}</span>;
@@ -577,7 +637,6 @@ export default function CharacterProfilePage() {
         cover_url: coverUrl || null,
         tagline: tagline.trim() || null,
         aka_line: akaLine.trim() || null,
-        details: details.slice(0, 10).filter((d) => d.key.trim() || d.value.trim()),
         bio: bio.trim() || null,
         followers_count: customFollowers ? parseInt(customFollowers, 10) : character.followers_count || 0,
         following_count: customFollowing ? parseInt(customFollowing, 10) : character.following_count || 0,
@@ -623,8 +682,8 @@ export default function CharacterProfilePage() {
     try {
       setPublishingPost(true);
       const followers = character.followers_count || 100;
-      const calcLikes = manualLikes ? parseInt(manualLikes, 10) : Math.floor(followers * (0.2 + Math.random() * 0.2));
-      const calcComments = manualComments ? parseInt(manualComments, 10) : Math.floor(calcLikes / 3);
+      const calcLikes = Math.floor(followers * (0.2 + Math.random() * 0.2));
+      const calcComments = 0;
 
       const formattedPoll = pollQuestion.trim() ? {
         question: pollQuestion.trim(),
@@ -638,6 +697,8 @@ export default function CharacterProfilePage() {
         link: songLink.trim() || "#"
       } : null;
 
+      const hasTagOrMention = postImages.length > 0 || postCaption.includes("@");
+
       const payload = {
         character_id: postingAsCharacterId || character.id,
         user_id: user.id,
@@ -649,13 +710,16 @@ export default function CharacterProfilePage() {
         stream_title: streamTitle || null,
         stream_viewers: streamViewers ? parseInt(streamViewers, 10) : null,
         location: postLocation || null,
+        mention_relation: hasTagOrMention ? mentionRelation : null,
         song: formattedSong,
         poll: formattedPoll,
         behind_the_story: behindTheStory || null,
         likes_count: calcLikes,
         comments_count: calcComments,
+        comments: [],
+        liked_by: [],
         is_draft: false,
-        created_at: postDate ? new Date(postDate).toISOString() : new Date().toISOString(),
+        created_at: new Date().toISOString(),
       };
 
       if (editingPostId) {
@@ -669,6 +733,7 @@ export default function CharacterProfilePage() {
             stream_title: payload.stream_title,
             stream_viewers: payload.stream_viewers,
             location: payload.location,
+            mention_relation: payload.mention_relation,
             song: payload.song,
             poll: payload.poll,
             behind_the_story: payload.behind_the_story,
@@ -700,6 +765,7 @@ export default function CharacterProfilePage() {
       setStreamTitle("");
       setStreamViewers("");
       setPostLocation("");
+      setMentionRelation("friend");
       setShowPollConfig(false);
       setPollQuestion("");
       setPollOptions(["", ""]);
@@ -707,11 +773,7 @@ export default function CharacterProfilePage() {
       setSongTitle("");
       setSongArtist("");
       setSongLink("");
-      setShowLikesConfig(false);
       setBehindTheStory("");
-      setManualLikes("");
-      setManualComments("");
-      setPostDate("");
     } catch (err: any) {
       alert("Error publishing post: " + err.message);
     } finally {
@@ -734,6 +796,18 @@ export default function CharacterProfilePage() {
       await supabase.from("characters").update({ followers_count: newCount }).eq("id", character.id);
       setIsFollowing(true);
       setCharacter((prev) => prev ? { ...prev, followers_count: newCount } : null);
+
+      if (character.user_id && character.user_id !== user?.id) {
+        const { error: notifError } = await supabase.from("notifications").insert({
+          user_id: character.user_id,
+          title: "New Follower",
+          body: `${user.email?.split("@")[0] || "Someone"} started following ${character.name}`,
+          content: `${user.email?.split("@")[0] || "Someone"} started following ${character.name}`,
+          category: "Activity",
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      }
     }
   };
 
@@ -741,38 +815,97 @@ export default function CharacterProfilePage() {
     if (!character) return;
     setFollowModalType(type);
     setLoadingFollows(true);
+
     if (type === "followers") {
-      const { data } = await supabase
+      const { data: followsData, error } = await supabase
         .from("character_follows")
-        .select("follower_id, characters:follower_id(id, name, handle, avatar_url, is_verified, user_colors)")
+        .select("follower_id")
         .eq("character_id", character.id);
-      setLoadingFollows(false);
-      setFollowList(data || []);
+
+      if (error || !followsData || followsData.length === 0) {
+        setFollowList([]);
+        setLoadingFollows(false);
+        return;
+      }
+
+      const followerIds = followsData.map((f: any) => f.follower_id).filter(Boolean);
+      const { data: charsData } = await supabase
+        .from("characters")
+        .select("id, name, handle, avatar_url, is_verified, user_colors")
+        .in("id", followerIds);
+
+      setFollowList((charsData || []).map((c: any) => ({ characters: c })));
     } else {
-      const { data } = await supabase
+      const { data: followsData, error } = await supabase
         .from("character_follows")
-        .select("character_id, characters:character_id(id, name, handle, avatar_url, is_verified, user_colors)")
+        .select("character_id")
         .eq("follower_id", character.id);
-      setLoadingFollows(false);
-      setFollowList(data || []);
+
+      if (error || !followsData || followsData.length === 0) {
+        setFollowList([]);
+        setLoadingFollows(false);
+        return;
+      }
+
+      const followingIds = followsData.map((f: any) => f.character_id).filter(Boolean);
+      const { data: charsData } = await supabase
+        .from("characters")
+        .select("id, name, handle, avatar_url, is_verified, user_colors")
+        .in("id", followingIds);
+
+      setFollowList((charsData || []).map((c: any) => ({ characters: c })));
     }
+    setLoadingFollows(false);
   };
 
-  const toggleWriterCharacterFollow = async (charId: string) => {
+const toggleWriterCharacterFollow = async (charId: string) => {
     if (!character || !user) return;
     const isCurrentlyFollowing = writerFollowStatusMap[charId];
     const newFollowState = !isCurrentlyFollowing;
+    const followerChar = writerCharacters.find((c) => c.id === charId);
 
     if (isCurrentlyFollowing) {
-      await supabase
+      const { error: delError } = await supabase
         .from("character_follows")
         .delete()
         .eq("follower_id", charId)
         .eq("character_id", character.id);
+
+      if (delError) {
+        console.error("Error removing follow:", delError.message);
+        alert("Failed to unfollow: " + delError.message);
+        return;
+      }
     } else {
-      await supabase
+      const { error: insError } = await supabase
         .from("character_follows")
         .insert({ follower_id: charId, character_id: character.id });
+
+      if (insError) {
+        console.error("Error adding follow:", insError.message);
+        alert("Failed to follow: " + insError.message);
+        return;
+      }
+
+      // Send activity notification to character owner if not self-following
+      if (character.user_id && character.user_id !== user.id) {
+        const notifText = `${followerChar?.name || "A character"} started following ${character.name}`;
+        const { error: notifError } = await supabase.from("notifications").insert({
+          user_id: character.user_id,
+          type: "follow",
+          title: "New Follower",
+          body: notifText,
+          content: notifText,
+          avatar_url: followerChar?.avatar_url || null, // ✅ Passes character avatar
+          category: "Activity",
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+
+        if (notifError) {
+          console.error("Failed to create notification:", notifError.message);
+        }
+      }
     }
 
     setWriterFollowStatusMap((prev) => ({ ...prev, [charId]: newFollowState }));
@@ -782,12 +915,12 @@ export default function CharacterProfilePage() {
       (character.followers_count || 0) + (newFollowState ? 1 : -1)
     );
 
-    await supabase
-      .from("characters")
-      .update({ followers_count: updatedFollowCount })
-      .eq("id", character.id);
-
+    // Update local state instantly; DB trigger handles the secure table update
     setCharacter((prev) => (prev ? { ...prev, followers_count: updatedFollowCount } : null));
+    
+    if (followModalType === "followers") {
+      openFollowsModal("followers");
+    }
   };
 
   const movePhoto = (index: number, direction: "left" | "right") => {
@@ -819,22 +952,8 @@ export default function CharacterProfilePage() {
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col gap-3 font-sans pb-24 text-neutral-900 dark:text-white px-2 sm:px-0 overflow-x-hidden">
       
-      {/* 3. TOP CORNER (...) BUTTON POINTS TO FULL CHARACTER EDIT MODAL */}
-      {isOwner && (
-        <div className="flex items-center justify-end px-1">
-          <button
-            type="button"
-            onClick={() => setIsEditModalOpen(true)}
-            className="w-8 h-8 rounded-full bg-white dark:bg-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-800 flex items-center justify-center text-neutral-600 dark:text-neutral-300 shadow-sm transition"
-            title="Edit Character Profile"
-          >
-            <MoreHorizontal size={16} />
-          </button>
-        </div>
-      )}
-
       {/* BANNER & HEADER */}
-      <div className="w-full bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-[24px] p-4 shadow-sm flex flex-col gap-3 overflow-hidden">
+      <div className="w-full bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-[24px] p-4 shadow-sm flex flex-col gap-3 overflow-visible relative">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           
           <div className="relative group">
@@ -861,14 +980,16 @@ export default function CharacterProfilePage() {
 
           <div className="flex-1 flex flex-col gap-2">
             <div className="flex flex-col gap-0.5">
-              <h1 className="text-base sm:text-lg font-black uppercase tracking-wider" style={!character.is_npc ? charTextStyle : { color: "inherit" }}>
+              <h1 className="text-base sm:text-lg font-black uppercase tracking-wider text-neutral-900 dark:text-white">
                 <span>{character.name}</span>
               </h1>
               
-              <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400">
-                <span>@{character.handle || character.name}</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold">
+                <span style={!character.is_npc ? charTextStyle : { color: "inherit" }}>
+                  @{character.handle || character.name}
+                </span>
                 {character.is_verified && (
-                  <img src="/verify.png" alt="Verified" className="w-4 h-4 object-contain drop-shadow-sm" />
+                  <img src="/verify-2.png" alt="Verified" className="w-4 h-4 object-contain drop-shadow-sm" />
                 )}
               </div>
             </div>
@@ -897,21 +1018,22 @@ export default function CharacterProfilePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* BANNER ACTION BUTTONS (Strictly 2 buttons for non-owners) */}
+          <div className="flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto">
             {isOwner ? (
               <>
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setIsManageFollowsOpen((prev) => !prev)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 flex items-center justify-center border border-neutral-300/60 dark:border-neutral-800 transition shadow-sm"
+                    className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 flex items-center justify-center border border-neutral-300/60 dark:border-neutral-800 transition shadow-sm"
                     title="Manage Follows"
                   >
-                    <Users size={15} className="text-neutral-700 dark:text-neutral-200" />
+                    <Users size={14} className="text-neutral-700 dark:text-neutral-200" />
                   </button>
 
                   {isManageFollowsOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-60 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl py-2 flex flex-col z-40 text-xs text-neutral-900 dark:text-white">
+                    <div className="absolute right-0 top-full mt-2 w-60 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl py-2 flex flex-col z-50 text-xs text-neutral-900 dark:text-white">
                       <div className="px-3 py-1 text-[10px] font-black uppercase text-neutral-400 tracking-wider">
                         Writer Characters
                       </div>
@@ -943,33 +1065,76 @@ export default function CharacterProfilePage() {
                 <button
                   type="button"
                   onClick={() => setIsNewPostModalOpen(true)}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-white shadow-md transition hover:scale-105"
+                  className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white shadow-md transition hover:scale-105"
                   style={{ background: charGradientCss }}
                   title="New Post"
                 >
-                  <PlusCircle size={16} />
+                  <Plus size={16} className="stroke-[2.5]" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300/60 dark:border-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-200 shadow-sm transition"
+                  title="Edit Character Profile"
+                >
+                  <MoreHorizontal size={15} />
                 </button>
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={toggleFollow}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition ${
-                    isFollowing ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-white" : "text-white"
-                  }`}
-                  style={!isFollowing ? { background: charGradientCss } : {}}
-                  title={isFollowing ? "Following" : "Follow"}
-                >
-                  {isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}
-                </button>
+                {/* Non-owner: Exactly 2 buttons (Follow dropdown + Message) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsManageFollowsOpen((prev) => !prev)}
+                    className={`h-8 px-3.5 rounded-full flex items-center justify-center gap-1.5 shadow-sm transition hover:scale-105 text-xs font-bold ${
+                      isFollowing ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-white" : "text-white"
+                    }`}
+                    style={!isFollowing ? { background: charGradientCss } : {}}
+                    title="Follow as character"
+                  >
+                    {isFollowing ? <UserCheck size={14} /> : <UserPlus size={14} />}
+                    <span>{isFollowing ? "Following" : "Follow"}</span>
+                  </button>
+
+                  {isManageFollowsOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-60 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/10 rounded-2xl shadow-2xl py-2 flex flex-col z-50 text-xs text-neutral-900 dark:text-white">
+                      <div className="px-3 py-1 text-[10px] font-black uppercase text-neutral-400 tracking-wider">
+                        Follow as your character
+                      </div>
+                      {writerCharacters.map((char) => {
+                        const isFollowingChar = writerFollowStatusMap[char.id];
+                        return (
+                          <button
+                            key={char.id}
+                            type="button"
+                            onClick={() => toggleWriterCharacterFollow(char.id)}
+                            className="flex items-center justify-between px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-white/10 transition font-bold group"
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <div className="w-5 h-5 rounded-full overflow-hidden bg-neutral-700 shrink-0">
+                                {char.avatar_url && <img src={char.avatar_url} alt="" className="w-full h-full object-cover" />}
+                              </div>
+                              <span className="truncate">
+                                {isFollowingChar ? `${char.name} (unfollow)` : `Follow as ${char.name}`}
+                              </span>
+                            </div>
+                            {isFollowingChar && <Check size={13} className="text-[#f45b95] shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => router.push(`/messages?user=${character.user_id}`)}
-                  className="w-9 h-9 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 flex items-center justify-center border border-neutral-300/60 dark:border-neutral-800 transition"
+                  className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 flex items-center justify-center border border-neutral-300/60 dark:border-neutral-800 transition"
                   title="Message"
                 >
-                  <MessageCircle size={15} className="text-neutral-700 dark:text-neutral-200" />
+                  <MessageCircle size={14} className="text-neutral-700 dark:text-neutral-200" />
                 </button>
               </>
             )}
@@ -977,14 +1142,14 @@ export default function CharacterProfilePage() {
         </div>
 
         {character.tagline && (
-          <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 pt-1">
+          <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 pt-1 text-left pl-0">
             {character.tagline}
           </p>
         )}
       </div>
 
       {/* NAVIGATION TABS */}
-      <div className="flex items-center justify-around sm:justify-start gap-2 sm:gap-6 border-b border-neutral-200 dark:border-neutral-800 px-2 overflow-x-hidden">
+      <div className="grid grid-cols-6 w-full border-b border-neutral-200 dark:border-neutral-800 px-2 overflow-x-hidden">
         {(
           [
             { name: "Posts", icon: Grid },
@@ -1002,13 +1167,13 @@ export default function CharacterProfilePage() {
               key={tab.name}
               type="button"
               onClick={() => setActiveTab(tab.name as CharacterTab)}
-              className={`flex items-center gap-1.5 py-2.5 px-2.5 text-xs font-black tracking-wider uppercase transition-all relative whitespace-nowrap ${
+              className={`flex items-center justify-center py-3 transition-all relative ${
                 isActive ? "" : "text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
               }`}
               style={isActive ? charTextStyle : {}}
+              title={tab.name}
             >
-              <Icon size={15} />
-              <span>{tab.name}</span>
+              <Icon size={18} />
               {isActive && (
                 <span className="absolute bottom-0 left-0 w-full h-[2.5px] rounded-t-full shadow-[0_-2px_8px_rgba(244,91,149,0.5)]" style={{ background: charGradientCss }} />
               )}
@@ -1029,18 +1194,25 @@ export default function CharacterProfilePage() {
               posts.map((post) => (
                 <div
                   key={post.id}
-                  onClick={() => {
+                  onClick={async () => {
                     setSelectedPost(post);
                     setActivePostImageIdx(0);
                     setIsSongPlaying(false);
                     const pid = post.id;
                     if (!postCommentsMap[pid]) {
+                      const dbComments = post.comments && post.comments.length > 0 
+                        ? post.comments 
+                        : generateContextualComments(post);
                       setPostCommentsMap((prev) => ({
                         ...prev,
-                        [pid]: [
-                          { id: 1, name: "briannaxcore17", handle: "briannaxcore17", text: "filter is a bit much", time: "now", likes: 38, isChar: true, color: "#f45b95", verified: true, avatar: null },
-                          { id: 2, name: "kiara", handle: "kiara", text: "BE SO SERIOUS, THE WAY I SCREAMED WHEN THIS POPPED UP", time: "now", likes: 30, isChar: true, color: "#c084fc", verified: true, avatar: null },
-                        ]
+                        [pid]: dbComments
+                      }));
+                    }
+                    if (!postLikedByMap[pid]) {
+                      const dbLikedBy = post.liked_by || [];
+                      setPostLikedByMap((prev) => ({
+                        ...prev,
+                        [pid]: dbLikedBy
                       }));
                     }
                   }}
@@ -1065,7 +1237,7 @@ export default function CharacterProfilePage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <MessageCircle size={15} className="fill-white" />
-                      <span>{formatCount(post.comments_count || 0)}</span>
+                      <span>{formatCount(post.comments_count || (post.comments?.length || 0))}</span>
                     </div>
                   </div>
                 </div>
@@ -1137,33 +1309,45 @@ export default function CharacterProfilePage() {
       </div>
 
       {/* ================================================================= */}
-      {/* INSTAGRAM POST DETAIL MODAL                                       */}
+      {/* INSTAGRAM POST DETAIL MODAL (Seamless scrollbar)                   */}
       {/* ================================================================= */}
       {selectedPost && (() => {
         const currentPostId = selectedPost.id;
         const currentLikes = selectedPost.likes_count || 0;
-        const likedChars = postLikedByMap[currentPostId] || [];
+        const likedChars = postLikedByMap[currentPostId] || selectedPost.liked_by || [];
         const isLikedByAny = likedChars.length > 0;
-        const comments = postCommentsMap[currentPostId] || [
-          { id: 1, name: "briannaxcore17", handle: "briannaxcore17", text: "filter is a bit much", time: "now", likes: 38, isChar: true, color: "#f45b95", verified: true, avatar: null },
-          { id: 2, name: "kiara", handle: "kiara", text: "BE SO SERIOUS, THE WAY I SCREAMED WHEN THIS POPPED UP", time: "now", likes: 30, isChar: true, color: "#c084fc", verified: true, avatar: null },
-        ];
+        
+        const displayedComments = postCommentsMap[currentPostId] || selectedPost.comments || [];
 
         return (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
-            <div className="relative w-full max-w-lg max-h-[95vh] overflow-y-auto bg-white dark:bg-[#13141b] text-neutral-900 dark:text-white rounded-[28px] border-none shadow-2xl flex flex-col text-sm">
+            <div className="relative w-full max-w-lg max-h-[95vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white dark:bg-[#13141b] text-neutral-900 dark:text-white rounded-[28px] border-none shadow-2xl flex flex-col text-sm">
               
               {/* Modal Header */}
               <div className="flex flex-col p-4 border-b border-neutral-200 dark:border-white/10 gap-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-neutral-800 border-2 border-[#f45b95] shrink-0">
+                    <div 
+                      onClick={() => {
+                        setSelectedPost(null);
+                        router.push(`/phone/${character.id}`);
+                      }}
+                      className="w-10 h-10 rounded-full overflow-hidden bg-neutral-800 border-2 border-[#f45b95] shrink-0 cursor-pointer hover:opacity-90"
+                    >
                       {character.avatar_url && <img src={character.avatar_url} alt="" className="w-full h-full object-cover" />}
                     </div>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-black text-sm">@{character.handle || character.name}</span>
-                        {character.is_verified && <img src="/verify.png" alt="" className="w-4 h-4 object-contain" />}
+                        <span 
+                          onClick={() => {
+                            setSelectedPost(null);
+                            router.push(`/phone/${character.id}`);
+                          }}
+                          className="font-black text-sm cursor-pointer hover:underline"
+                        >
+                          @{character.handle || character.name}
+                        </span>
+                        {character.is_verified && <img src="/verify-2.png" alt="" className="w-4 h-4 object-contain" />}
                         <span className="text-neutral-400 text-xs">· {timeAgo(selectedPost.created_at)}</span>
                       </div>
 
@@ -1215,7 +1399,13 @@ export default function CharacterProfilePage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => setSelectedPost(null)}
+                      onClick={() => {
+                        setSelectedPost(null);
+                        setIsCommentingCharacterDropdownOpen(false);
+                        setReplyingCharacterDropdownOpen(false);
+                        setReplyingToCommentId(null);
+                        setIsLikeMenuOpen(false);
+                      }}
                       className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white"
                     >
                       <X size={15} />
@@ -1273,7 +1463,14 @@ export default function CharacterProfilePage() {
                       </>
                     );
                   } else if (selectedPost.video_url) {
-                    return <video src={selectedPost.video_url} controls className="w-full h-full object-cover" />;
+                    return (
+                      <video 
+                        src={selectedPost.video_url} 
+                        controls 
+                        playsInline
+                        className="w-full h-full object-cover" 
+                      />
+                    );
                   } else {
                     return <div className="p-8 text-center text-sm font-semibold">{selectedPost.content}</div>;
                   }
@@ -1296,53 +1493,147 @@ export default function CharacterProfilePage() {
                       </button>
 
                       {isLikeMenuOpen && (
-                        <div className="absolute left-0 bottom-full mb-2 w-52 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/20 rounded-2xl shadow-2xl py-2 flex flex-col z-40 text-sm">
+                        <div className="absolute left-0 bottom-full mb-2 w-56 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/20 rounded-2xl shadow-2xl py-2 flex flex-col z-50 text-sm">
                           <div className="px-3.5 py-1 text-[10px] font-black uppercase text-neutral-400 tracking-wider">
                             Like as character
                           </div>
-                          {writerCharacters.map((char) => (
-                            <button
-                              key={char.id}
-                              type="button"
-                              onClick={() => {
-                                if (!likedChars.some((c) => c.name === char.name)) {
+                          {writerCharacters.map((char) => {
+                            const isCharLiked = likedChars.some((c: any) => c.name === char.name);
+                            return (
+                              <button
+                                key={char.id}
+                                type="button"
+                                onClick={async () => {
+                                  let updatedLikedBy = [...likedChars];
+                                  if (isCharLiked) {
+                                    updatedLikedBy = updatedLikedBy.filter((c: any) => c.name !== char.name);
+                                  } else {
+                                    const charCols = char.user_colors || ["#f45b95"];
+                                    const isMulti = charCols.length > 1;
+                                    const grad = isMulti ? `linear-gradient(135deg, ${charCols.join(", ")})` : charCols[0];
+                                    updatedLikedBy.unshift({
+                                      id: char.id,
+                                      name: char.name,
+                                      handle: char.handle || char.name,
+                                      avatar_url: char.avatar_url,
+                                      colors: charCols,
+                                      isGradient: isMulti,
+                                      gradient: grad
+                                    });
+
+                                    if (character.user_id && character.user_id !== user?.id) {
+                                      await supabase.from("notifications").insert({
+                                        user_id: character.user_id,
+                                        type: "like",
+                                        title: "New Like",
+                                        body: `${char.name} liked a post by ${character.name}`,
+                                        content: `${char.name} liked a post by ${character.name}`,
+                                        avatar_url: char.avatar_url || null, // ✅ Passes character avatar
+                                        category: "Activity",
+                                        is_read: false,
+                                        created_at: new Date().toISOString()
+                                      });
+                                    }
+                                  }
+
                                   setPostLikedByMap((prev) => ({
                                     ...prev,
-                                    [currentPostId]: [
-                                      { name: char.name, handle: char.handle || char.name, color: char.user_colors?.[0] || "#f45b95" },
-                                      ...(prev[currentPostId] || []),
-                                    ]
+                                    [currentPostId]: updatedLikedBy
                                   }));
-                                }
-                                setIsLikeMenuOpen(false);
-                              }}
-                              className="flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-white/10 font-bold transition"
-                            >
-                              <Heart size={14} className="text-rose-500 fill-rose-500 shrink-0" />
-                              <span className="truncate">Like as {char.name}</span>
-                            </button>
-                          ))}
+
+                                  const newLikesCount = Math.max(0, currentLikes + (isCharLiked ? -1 : 1));
+
+                                  setSelectedPost((prev: any) => ({
+                                    ...prev,
+                                    likes_count: newLikesCount,
+                                    liked_by: updatedLikedBy
+                                  }));
+
+                                  setPosts((prev) =>
+                                    prev.map((p) => (p.id === currentPostId ? { ...p, likes_count: newLikesCount, liked_by: updatedLikedBy } : p))
+                                  );
+
+                                  await supabase
+                                    .from("posts")
+                                    .update({
+                                      likes_count: newLikesCount,
+                                      liked_by: updatedLikedBy
+                                    })
+                                    .eq("id", currentPostId);
+
+                                  setIsLikeMenuOpen(false);
+                                }}
+                                className="flex items-center justify-between px-3.5 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-white/10 font-bold transition"
+                              >
+                                <span className="truncate">Like as {char.name}</span>
+                                <Heart size={14} className={isCharLiked ? "text-rose-500 fill-rose-500 shrink-0" : "text-neutral-400 shrink-0"} />
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
 
                     <MessageCircle size={21} className="hover:text-[#f45b95] cursor-pointer transition" />
-                    <Share2 size={21} className="hover:text-[#f45b95] cursor-pointer transition" />
+                    
+                    <button
+                      type="button"
+                      title="Copy link to post"
+                      onClick={() => {
+                        const link = `${window.location.origin}/phone/${character.id}`;
+                        navigator.clipboard.writeText(link);
+                        alert("Post link copied to clipboard!");
+                      }}
+                    >
+                      <Share2 size={21} className="hover:text-[#f45b95] cursor-pointer transition" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="font-bold text-sm flex items-center gap-1.5">
+                <div className="font-bold text-sm flex items-center gap-1.5 flex-wrap">
                   {likedChars.length > 0 ? (
                     <span>
                       Liked by{" "}
-                      {likedChars.slice(0, 3).map((c, idx, arr) => (
-                        <React.Fragment key={idx}>
-                          <strong style={{ color: c.color }}>@{c.handle}</strong>
-                          {idx < arr.length - 1 && ", "}
-                        </React.Fragment>
-                      ))}{" "}
-                      {likedChars.length > 3 && `and ${formatCount(currentLikes + likedChars.length - 3)} others`}
-                      {likedChars.length <= 3 && currentLikes > 0 && `and ${formatCount(currentLikes)} others`}
+                      {likedChars.slice(0, 3).map((c: any, idx: number, arr: any[]) => {
+                        const style = c.isGradient
+                          ? { backgroundImage: c.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }
+                          : { color: c.gradient };
+                        return (
+                          <React.Fragment key={idx}>
+                            <strong 
+                              style={style} 
+                              className="cursor-pointer hover:underline"
+                              onClick={() => {
+                                if (c.id) {
+                                  setSelectedPost(null);
+                                  router.push(`/phone/${c.id}`);
+                                }
+                              }}
+                            >
+                              {c.handle}
+                            </strong>
+                            {idx < arr.length - 1 && ", "}
+                          </React.Fragment>
+                        );
+                      })}{" "}
+                      {likedChars.length > 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAllLikesModalOpen(true)}
+                          className="hover:underline font-bold inline text-neutral-900 dark:text-white"
+                        >
+                          and {formatCount(currentLikes + likedChars.length - 3)} others
+                        </button>
+                      )}
+                      {likedChars.length <= 3 && currentLikes > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAllLikesModalOpen(true)}
+                          className="hover:underline font-bold inline text-neutral-900 dark:text-white"
+                        >
+                          and {formatCount(currentLikes)} others
+                        </button>
+                      )}
                     </span>
                   ) : (
                     <span>{formatCount(currentLikes)} likes</span>
@@ -1351,7 +1642,15 @@ export default function CharacterProfilePage() {
 
                 {selectedPost.content && (
                   <p className="text-sm text-neutral-800 dark:text-neutral-200">
-                    <strong className="mr-2 font-bold">@{character.handle || character.name}</strong>
+                    <strong 
+                      className="mr-2 font-bold cursor-pointer hover:underline"
+                      onClick={() => {
+                        setSelectedPost(null);
+                        router.push(`/phone/${character.id}`);
+                      }}
+                    >
+                      @{character.handle || character.name}
+                    </strong>
                     {selectedPost.content}
                   </p>
                 )}
@@ -1375,7 +1674,7 @@ export default function CharacterProfilePage() {
                       </button>
 
                       {isCommentingCharacterDropdownOpen && (
-                        <div className="absolute left-0 bottom-full mb-2 w-52 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/20 rounded-2xl shadow-2xl py-2 flex flex-col z-40 text-sm">
+                        <div className="absolute left-0 bottom-full mb-2 w-52 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/20 rounded-2xl shadow-2xl py-2 flex flex-col z-50 text-sm">
                           <div className="px-3.5 py-1 text-[10px] font-black uppercase text-neutral-400 tracking-wider">
                             Comment as
                           </div>
@@ -1409,10 +1708,11 @@ export default function CharacterProfilePage() {
 
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         if (!postCommentInput.trim()) return;
                         const newComment = {
                           id: Date.now(),
+                          character_id: commentingChar?.id,
                           name: `@${commentingChar?.handle || commentingChar?.name || "writer"}`,
                           text: postCommentInput.trim(),
                           time: postCommentDate ? new Date(postCommentDate).toLocaleDateString() : "now",
@@ -1422,10 +1722,35 @@ export default function CharacterProfilePage() {
                           verified: commentingChar?.is_verified,
                           avatar: commentingChar?.avatar_url,
                         };
+                        const updatedComments = [newComment, ...displayedComments];
+                        
                         setPostCommentsMap((prev) => ({
                           ...prev,
-                          [currentPostId]: [newComment, ...(prev[currentPostId] || [])]
+                          [currentPostId]: updatedComments
                         }));
+
+                        await supabase
+                          .from("posts")
+                          .update({ 
+                            comments: updatedComments,
+                            comments_count: updatedComments.length 
+                          })
+                          .eq("id", currentPostId);
+
+                        if (character.user_id && character.user_id !== user?.id) {
+                          await supabase.from("notifications").insert({
+                            user_id: character.user_id,
+                            type: "comment",
+                            title: "New Comment",
+                            body: `${commentingChar?.name || "Someone"} commented on a post by ${character.name}`,
+                            content: `${commentingChar?.name || "Someone"} commented on a post by ${character.name}`,
+                            avatar_url: commentingChar?.avatar_url || null, // ✅ Passes character avatar
+                            category: "Activity",
+                            is_read: false,
+                            created_at: new Date().toISOString()
+                          });
+                        }
+
                         setPostCommentInput("");
                         setPostCommentDate("");
                       }}
@@ -1456,52 +1781,188 @@ export default function CharacterProfilePage() {
                   </div>
                 </div>
 
+                {/* Comment List */}
                 <div className="flex flex-col gap-3.5 pt-1">
-                  {comments
-                    .slice(0, 15)
-                    .sort((a: any, b: any) => (b.isChar ? 1 : 0) - (a.isChar ? 1 : 0))
-                    .map((comment: any, i: number) => (
-                      <div key={comment.id || i} className="flex items-start justify-between gap-3.5">
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full overflow-hidden bg-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 border border-neutral-300 dark:border-white/20">
-                            {comment.avatar ? (
-                              <img src={comment.avatar} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              comment.name.charAt(1).toUpperCase()
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-bold text-sm flex items-center gap-1.5">
-                              <strong style={comment.color ? { color: comment.color } : {}}>{comment.name}</strong>
-                              {comment.verified && <img src="/verify.png" alt="" className="w-3.5 h-3.5 object-contain" />}
-                              <span className="font-normal text-neutral-700 dark:text-neutral-200 text-sm ml-1">{comment.text}</span>
-                            </span>
-                            <div className="flex items-center gap-3 text-xs text-neutral-400 font-semibold mt-0.5">
-                              <span>{comment.time}</span>
-                              <span>{comment.likes} likes</span>
-                              <span className="cursor-pointer hover:text-neutral-900 dark:hover:text-white">Reply</span>
+                  {displayedComments.length === 0 ? (
+                    <div className="py-8 text-center text-neutral-400 text-xs font-bold">
+                      No comments yet.
+                    </div>
+                  ) : (
+                    displayedComments.map((comment: any, i: number) => {
+                      const cid = comment.id || i;
+                      const isReplyingHere = replyingToCommentId === cid;
+                      return (
+                        <div key={cid} className="flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-3.5">
+                            <div className="flex items-start gap-3 w-full min-w-0">
+                              <div 
+                                onClick={() => {
+                                  if (comment.character_id) {
+                                    setSelectedPost(null);
+                                    router.push(`/phone/${comment.character_id}`);
+                                  }
+                                }}
+                                className="w-8 h-8 rounded-full overflow-hidden bg-neutral-700 flex items-center justify-center font-bold text-xs text-white shrink-0 border border-neutral-300 dark:border-white/25 cursor-pointer hover:opacity-90"
+                              >
+                                {comment.avatar ? (
+                                  <img src={comment.avatar} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  comment.name.charAt(1).toUpperCase()
+                                )}
+                              </div>
+                              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                <div className="flex items-start gap-1.5 flex-wrap">
+                                  <strong 
+                                    style={comment.color ? { color: comment.color } : {}}
+                                    className="cursor-pointer hover:underline font-bold text-sm shrink-0"
+                                    onClick={() => {
+                                      if (comment.character_id) {
+                                        setSelectedPost(null);
+                                        router.push(`/phone/${comment.character_id}`);
+                                      }
+                                    }}
+                                  >
+                                    {comment.name}
+                                  </strong>
+                                  {comment.verified && <img src="/verify-2.png" alt="" className="w-3.5 h-3.5 object-contain shrink-0 mt-0.5" />}
+                                  <span className="font-normal text-neutral-700 dark:text-neutral-200 text-sm break-words">
+                                    {comment.text}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-neutral-400 font-semibold mt-0.5">
+                                  <span>{comment.time}</span>
+                                  <span>{comment.likes} likes</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReplyingToCommentId(isReplyingHere ? null : cid);
+                                      setReplyingCharacterDropdownOpen(false);
+                                    }}
+                                    className="hover:text-neutral-900 dark:hover:text-white font-bold"
+                                  >
+                                    Reply
+                                  </button>
+                                </div>
+                              </div>
                             </div>
+                            <Heart size={13} className="text-neutral-400 hover:text-rose-500 cursor-pointer shrink-0 mt-1" />
                           </div>
-                        </div>
-                        <Heart size={13} className="text-neutral-400 hover:text-rose-500 cursor-pointer shrink-0 mt-1" />
-                      </div>
-                    ))}
 
-                  <div className="relative mt-2 p-4 rounded-2xl bg-neutral-100 dark:bg-neutral-900 overflow-hidden text-center">
-                    <div className="filter blur-sm select-none opacity-40 flex flex-col gap-2 text-sm">
-                      <span>@stan_acc: unbelievable scenes omg</span>
-                      <span>@user99: need answers immediately</span>
-                    </div>
-                    <div className="absolute inset-0 bg-white/60 dark:bg-black/60 backdrop-blur-[2px] flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => alert("Showing all comments")}
-                        className="px-5 py-2 rounded-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-black text-xs shadow-md transition hover:scale-105"
-                      >
-                        See 3,538,435 more comments
-                      </button>
-                    </div>
-                  </div>
+                          {/* Independent Reply Box & Avatar Pop-up */}
+                          {isReplyingHere && (
+                            <div className="ml-11 flex flex-col gap-2 p-3 rounded-2xl bg-neutral-100 dark:bg-[#1a1c26] border border-neutral-200 dark:border-white/10">
+                              <div className="flex items-center gap-2">
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => setReplyingCharacterDropdownOpen((prev) => !prev)}
+                                    className="w-7 h-7 rounded-full overflow-hidden bg-neutral-700 shrink-0 border border-neutral-300 dark:border-white/20 hover:scale-105 transition"
+                                  >
+                                    {replyingChar?.avatar_url ? (
+                                      <img src={replyingChar.avatar_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className="w-full h-full flex items-center justify-center font-bold text-white text-xs">?</span>
+                                    )}
+                                  </button>
+
+                                  {replyingCharacterDropdownOpen && (
+                                    <div className="absolute left-0 bottom-full mb-2 w-52 bg-white dark:bg-[#16171f] border border-neutral-200 dark:border-white/20 rounded-2xl shadow-2xl py-2 flex flex-col z-50 text-sm">
+                                      <div className="px-3.5 py-1 text-[10px] font-black uppercase text-neutral-400 tracking-wider">
+                                        Reply as
+                                      </div>
+                                      {writerCharacters.map((char) => (
+                                        <button
+                                          key={char.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setReplyingAsCharacterId(char.id);
+                                            setReplyingCharacterDropdownOpen(false);
+                                          }}
+                                          className="flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-white/10 font-bold transition"
+                                        >
+                                          <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-700 shrink-0">
+                                            {char.avatar_url && <img src={char.avatar_url} alt="" className="w-full h-full object-cover" />}
+                                          </div>
+                                          <span className="truncate">{char.name}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <input
+                                  type="text"
+                                  value={replyInput}
+                                  onChange={(e) => setReplyInput(e.target.value)}
+                                  placeholder={`Reply as ${replyingChar?.name || "Character"}...`}
+                                  className="flex-1 bg-transparent border-none text-xs text-neutral-900 dark:text-white outline-none px-2"
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!replyInput.trim()) return;
+                                    const newReply = {
+                                      id: Date.now(),
+                                      character_id: replyingChar?.id,
+                                      name: `@${replyingChar?.handle || replyingChar?.name || "writer"}`,
+                                      text: replyInput.trim(),
+                                      time: replyDate ? new Date(replyDate).toLocaleDateString() : "now",
+                                      likes: Math.floor(Math.random() * 20) + 1,
+                                      isChar: true,
+                                      color: replyingChar?.is_npc ? undefined : (replyingChar?.user_colors?.[0] || "#f45b95"),
+                                      verified: replyingChar?.is_verified,
+                                      avatar: replyingChar?.avatar_url,
+                                    };
+                                    const updatedComments = [newReply, ...displayedComments];
+                                    setPostCommentsMap((prev) => ({
+                                      ...prev,
+                                      [currentPostId]: updatedComments
+                                    }));
+
+                                    await supabase
+                                      .from("posts")
+                                      .update({ 
+                                        comments: updatedComments,
+                                        comments_count: updatedComments.length 
+                                      })
+                                      .eq("id", currentPostId);
+
+                                    setReplyInput("");
+                                    setReplyDate("");
+                                    setReplyingToCommentId(null);
+                                  }}
+                                  className="px-3 py-1.5 rounded-full font-bold text-white text-xs shadow-sm transition"
+                                  style={{ background: commentButtonGradient }}
+                                >
+                                  Reply
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 border-t border-neutral-200 dark:border-white/10 text-[11px]">
+                                <span className="text-neutral-400">Reply date:</span>
+                                <input
+                                  type="datetime-local"
+                                  min={selectedPost.created_at ? new Date(selectedPost.created_at).toISOString().slice(0, 16) : undefined}
+                                  value={replyDate}
+                                  onChange={(e) => {
+                                    const postTime = new Date(selectedPost.created_at).getTime();
+                                    const chosenTime = new Date(e.target.value).getTime();
+                                    if (chosenTime < postTime) {
+                                      alert("Replies cannot be dated before the post was made.");
+                                      return;
+                                    }
+                                    setReplyDate(e.target.value);
+                                  }}
+                                  className="bg-neutral-200 dark:bg-black/40 rounded-lg px-2 py-0.5 text-[11px] text-neutral-900 dark:text-white outline-none"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
               </div>
@@ -1511,10 +1972,67 @@ export default function CharacterProfilePage() {
         );
       })()}
 
-      {/* NEW POST / EDIT POST MODAL */}
+      {/* ALL LIKES POP-UP MODAL (Seamless scrollbar) */}
+      {isAllLikesModalOpen && (() => {
+        const modalLikedChars = selectedPost ? (postLikedByMap[selectedPost.id] || selectedPost.liked_by || []) : [];
+        return (
+          <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white dark:bg-neutral-900 rounded-[28px] p-6 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col gap-4">
+              <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-neutral-800">
+                <h3 className="text-sm font-black uppercase tracking-wider" style={!character.is_npc ? charTextStyle : {}}>
+                  Liked by
+                </h3>
+                <button 
+                  type="button" 
+                  onClick={() => setIsAllLikesModalOpen(false)} 
+                  className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="flex flex-col gap-2.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                {modalLikedChars.length === 0 ? (
+                  <div className="py-8 text-center text-neutral-400 text-xs font-bold">No likes recorded.</div>
+                ) : (
+                  modalLikedChars.map((c: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700">
+                      <div className="flex items-center gap-3.5 truncate">
+                        <div className="w-11 h-11 rounded-full overflow-hidden bg-neutral-700 shrink-0">
+                          {c.avatar_url && <img src={c.avatar_url} alt="" className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="flex flex-col truncate">
+                          <span className="text-sm font-bold truncate">
+                            {c.name}
+                          </span>
+                          <span className="text-xs text-neutral-400 truncate">@{c.handle}</span>
+                        </div>
+                      </div>
+                      {c.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAllLikesModalOpen(false);
+                            setSelectedPost(null);
+                            router.push(`/phone/${c.id}`);
+                          }}
+                          className="px-4 py-1.5 rounded-full bg-neutral-200 dark:bg-neutral-700 text-xs font-bold hover:opacity-80"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* NEW POST MODAL */}
       {isNewPostModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-[#16171f] text-neutral-900 dark:text-white rounded-[28px] p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.7)] flex flex-col gap-4 border border-neutral-200 dark:border-white/10">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white dark:bg-[#16171f] text-neutral-900 dark:text-white rounded-[28px] p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.7)] flex flex-col gap-4 border border-neutral-200 dark:border-white/10">
             
             <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-white/10">
               <h3 className="text-sm font-black uppercase tracking-wider">
@@ -1623,16 +2141,75 @@ export default function CharacterProfilePage() {
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-neutral-400">What&apos;s happening?</label>
+              {/* Caption with @mention Autocomplete */}
+              <div className="flex flex-col gap-1.5 relative">
+                <label className="text-[10px] font-black uppercase tracking-wider text-neutral-400">What&apos;s happening? (Type @ to mention)</label>
                 <textarea
                   rows={3}
                   value={postCaption}
-                  onChange={(e) => setPostCaption(e.target.value)}
-                  placeholder="Write a caption..."
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPostCaption(val);
+
+                    const lastAtIndex = val.lastIndexOf("@");
+                    if (lastAtIndex !== -1 && (lastAtIndex === 0 || val[lastAtIndex - 1] === " ")) {
+                      const query = val.slice(lastAtIndex + 1).toLowerCase();
+                      const filtered = allPlatformChars.filter(c => 
+                        (c.handle || "").toLowerCase().includes(query) || 
+                        (c.name || "").toLowerCase().includes(query)
+                      );
+                      setMentionSuggestions(filtered);
+                      setShowMentionDropdown(filtered.length > 0);
+                    } else {
+                      setShowMentionDropdown(false);
+                    }
+                  }}
+                  placeholder="Write a caption... (e.g. @username hanging out)"
                   className="w-full p-3.5 rounded-2xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none resize-none focus:border-[#f45b95]"
                 />
+
+                {/* Autocomplete Dropdown */}
+                {showMentionDropdown && (
+                  <div className="absolute left-0 top-full mt-1 w-full max-h-40 overflow-y-auto bg-white dark:bg-[#1a1c26] border border-neutral-200 dark:border-white/15 rounded-xl shadow-2xl z-50 py-1">
+                    {mentionSuggestions.map((char) => (
+                      <button
+                        key={char.id}
+                        type="button"
+                        onClick={() => {
+                          const lastAtIndex = postCaption.lastIndexOf("@");
+                          const base = postCaption.slice(0, lastAtIndex);
+                          setPostCaption(`${base}@${char.handle || char.name} `);
+                          setShowMentionDropdown(false);
+                        }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-white/10 text-xs font-bold transition"
+                      >
+                        <div className="w-6 h-6 rounded-full overflow-hidden bg-neutral-700 shrink-0">
+                          {char.avatar_url && <img src={char.avatar_url} alt="" className="w-full h-full object-cover" />}
+                        </div>
+                        <span className="truncate">{char.name} <span className="text-neutral-400">@{char.handle}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Conditional Tag / Mention Relation Selector (Only shows if photo attached or @ mention used) */}
+              {(postImages.length > 0 || postCaption.includes("@")) && (
+                <div className="flex flex-col gap-1.5 animate-fadeIn">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Mention / Tag Relation (Prompts comments)</label>
+                  <select
+                    value={mentionRelation}
+                    onChange={(e) => setMentionRelation(e.target.value)}
+                    className="w-full h-11 px-4 rounded-2xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 text-xs font-bold outline-none focus:border-[#f45b95]"
+                  >
+                    <option value="friend">Friend / Ally</option>
+                    <option value="best_friend">Best Friend / Co-sign</option>
+                    <option value="ex">Ex / Past Flame</option>
+                    <option value="rival">Rival / Frenemy</option>
+                    <option value="family">Family</option>
+                  </select>
+                </div>
+              )}
 
               {/* Poll Configurator */}
               <div className="flex flex-col gap-2">
@@ -1785,7 +2362,7 @@ export default function CharacterProfilePage() {
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                <input type="url" placeholder="https://..." value={postMediaInputUrl} onChange={(e) => setPostMediaInputUrl(e.target.value)} className="w-full h-8 bg-neutral-100 dark:bg-[#191a21] border border-neutral-200 dark:border-white/10 rounded-lg px-2.5 text-xs font-semibold outline-none" />
+                <input type="url" placeholder="https://..." value={postMediaInputUrl || ""} onChange={(e) => setPostMediaInputUrl(e.target.value)} className="w-full h-8 bg-neutral-100 dark:bg-[#191a21] border border-neutral-200 dark:border-white/10 rounded-lg px-2.5 text-xs font-semibold outline-none" />
                 <button type="button" onClick={() => handleApplyPostMediaUrl(postMediaInputUrl)} className="w-full h-8 rounded-lg text-white text-[11px] font-bold" style={{ background: charGradientCss }}>Apply</button>
               </div>
             )}
@@ -1793,7 +2370,7 @@ export default function CharacterProfilePage() {
         </div>
       )}
 
-      {/* FOLLOWERS / FOLLOWING POPUP MODAL */}
+      {/* FOLLOWERS / FOLLOWING POPUP MODAL (Seamless scrollbar) */}
       {followModalType && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white dark:bg-neutral-900 rounded-[28px] p-6 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col gap-4">
@@ -1805,7 +2382,7 @@ export default function CharacterProfilePage() {
                 <X size={14} />
               </button>
             </div>
-            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+            <div className="flex flex-col gap-2.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {loadingFollows ? (
                 <div className="py-8 text-center text-neutral-400 text-xs">Loading...</div>
               ) : followList.length === 0 ? (
@@ -1815,23 +2392,23 @@ export default function CharacterProfilePage() {
                   const charObj = item.characters;
                   if (!charObj) return null;
                   return (
-                    <div key={i} className="flex items-center justify-between p-2 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700">
-                      <div className="flex items-center gap-2.5 truncate">
-                        <div className="w-8 h-8 rounded-full overflow-hidden bg-neutral-700 shrink-0">
+                    <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700">
+                      <div className="flex items-center gap-3.5 truncate">
+                        <div className="w-11 h-11 rounded-full overflow-hidden bg-neutral-700 shrink-0">
                           {charObj.avatar_url && <img src={charObj.avatar_url} alt="" className="w-full h-full object-cover" />}
                         </div>
                         <div className="flex flex-col truncate">
-                          <span className="text-xs font-bold truncate flex items-center gap-1">
+                          <span className="text-sm font-bold truncate flex items-center gap-1.5">
                             {charObj.name}
-                            {charObj.is_verified && <img src="/verify.png" alt="" className="w-3 h-3 object-contain" />}
+                            {charObj.is_verified && <img src="/verify-2.png" alt="" className="w-4 h-4 object-contain" />}
                           </span>
-                          <span className="text-[10px] text-neutral-400 truncate">@{charObj.handle || charObj.name}</span>
+                          <span className="text-xs text-neutral-400 truncate">@{charObj.handle || charObj.name}</span>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => router.push(`/phone/${charObj.id}`)}
-                        className="px-3 py-1 rounded-full bg-neutral-200 dark:bg-neutral-700 text-[10px] font-bold hover:opacity-80"
+                        className="px-4 py-1.5 rounded-full bg-neutral-200 dark:bg-neutral-700 text-xs font-bold hover:opacity-80"
                       >
                         View
                       </button>
@@ -1844,18 +2421,26 @@ export default function CharacterProfilePage() {
         </div>
       )}
 
-      {/* ================================================================= */}
-      {/* COMPREHENSIVE CHARACTER EDIT MODAL (Opened via ... button)        */}
-      {/* ================================================================= */}
+      {/* COMPREHENSIVE CHARACTER EDIT MODAL */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-6">
-          <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto bg-white dark:bg-[#16171f] text-neutral-900 dark:text-white rounded-[28px] p-6 shadow-2xl flex flex-col gap-5 border border-neutral-200 dark:border-white/10">
+          <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white dark:bg-[#16171f] text-neutral-900 dark:text-white rounded-[28px] p-6 shadow-2xl flex flex-col gap-5 border border-neutral-200 dark:border-white/10">
             
             <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-white/10">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">edit character</span>
-                <h3 className="text-base font-black tracking-wide">Update {character.name}</h3>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-800 border-2 border-[#f45b95] shrink-0">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="w-full h-full flex items-center justify-center text-white font-black text-sm">?</span>
+                  )}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">edit character</span>
+                  <h3 className="text-base font-black tracking-wide">Update {character.name}</h3>
+                </div>
               </div>
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1930,7 +2515,7 @@ export default function CharacterProfilePage() {
                 </div>
               </div>
 
-              {/* Color & Palette Picker */}
+              {/* Color & Palette Picker with Preview Text */}
               <div className="flex flex-col gap-3 p-4 rounded-2xl bg-neutral-50 dark:bg-[#1c1e29] border border-neutral-200 dark:border-white/10">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Color & Palette</span>
@@ -1980,6 +2565,13 @@ export default function CharacterProfilePage() {
                     </div>
                   ))}
                 </div>
+
+                <div className="pt-2 border-t border-neutral-200 dark:border-white/10 text-xs">
+                  <span className="text-neutral-400 text-[10px] font-black uppercase tracking-wider block mb-1">Preview styling:</span>
+                  <p className="font-semibold">
+                    THEIR NAME: <strong className="font-bold">bold</strong>, <span className="italic">*an action*</span>, <span style={charTextStyle}>"dialogue sweeps through the colors"</span>, <span className="underline">_underlined_</span>.
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1992,54 +2584,16 @@ export default function CharacterProfilePage() {
                 />
               </div>
 
-              {/* Details Key/Value Rows */}
-              <div className="flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Details ({details.length}/10)</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (details.length < 10) setDetails((prev) => [...prev, { key: "Age", value: "" }]);
-                    }}
-                    className="text-xs font-black text-[#f45b95] hover:underline"
-                  >
-                    + Add detail
-                  </button>
-                </div>
-
-                {details.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={item.key}
-                      onChange={(e) => {
-                        const copy = [...details];
-                        copy[idx].key = e.target.value;
-                        setDetails(copy);
-                      }}
-                      placeholder="Key (e.g. Age)"
-                      className="w-1/3 h-10 px-3 rounded-xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none"
-                    />
-                    <input
-                      type="text"
-                      value={item.value}
-                      onChange={(e) => {
-                        const copy = [...details];
-                        copy[idx].value = e.target.value;
-                        setDetails(copy);
-                      }}
-                      placeholder="Value"
-                      className="flex-1 h-10 px-3 rounded-xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setDetails((prev) => prev.filter((_, i) => i !== idx))}
-                      className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+              {/* Episode Tagline Box */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Episode Tagline (aka_line)</label>
+                <input
+                  type="text"
+                  value={akaLine}
+                  onChange={(e) => setAkaLine(e.target.value)}
+                  placeholder="aka **the prodigy**, (he / him) ; twenty8"
+                  className="w-full h-11 px-4 rounded-2xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2179,7 +2733,7 @@ export default function CharacterProfilePage() {
               <div className="flex flex-col items-center justify-center gap-2 p-4 border border-dashed border-neutral-300 dark:border-white/20 rounded-xl">
                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
                 <button type="button" disabled={uploadingImage} onClick={() => fileInputRef.current?.click()} className="px-3.5 py-1.5 rounded-full text-white text-[11px] font-bold shadow-md transition" style={{ background: charGradientCss }}>
-                  {uploadingImage ? "Uploading..." : "Browse photos"}
+                  {uploadingImage ? "Uploading..." : "Browse files"}
                 </button>
               </div>
             ) : (

@@ -4,14 +4,17 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import ShowcaseHeroBanner from "@/components/ShowcaseHeroBanner";
-import { Bell, CheckCheck, Trash2, Sparkles, MessageCircle } from "lucide-react";
+import { Bell, CheckCheck, Trash2, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface NotificationItem {
   id: string;
-  type: string;
-  title: string;
-  body: string;
+  type?: string;
+  title?: string;
+  body?: string;
+  content?: string;
+  avatar_url?: string;
+  actor_name?: string;
   link?: string;
   created_at: string;
   is_read: boolean;
@@ -195,44 +198,59 @@ function NotificationsContent() {
             </p>
           </div>
         ) : (
-          filteredNotifications.map((notif) => (
-            <div
-              key={notif.id}
-              onClick={() => handleNotificationClick(notif)}
-              className={`relative w-full flex items-center p-4 rounded-[22px] border transition shadow-sm cursor-pointer hover:border-[#f45b95]/50 ${
-                notif.is_read
-                  ? "bg-white/70 dark:bg-[#16171f]/70 border-neutral-200/60 dark:border-white/[0.04]"
-                  : "bg-white dark:bg-[#16171f] border-[#f45b95]/40 dark:border-[#f45b95]/30 ring-1 ring-[#f45b95]/20"
-              }`}
-            >
-              {/* Pink unread dot positioned on the far left edge of the entire post card */}
-              {!notif.is_read && (
-                <span className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#f45b95] shadow-[0_0_10px_rgba(244,91,149,0.8)]" />
-              )}
+          filteredNotifications.map((notif) => {
+            const rawText = notif.body || notif.content || "";
+            const uppercaseText = rawText.toUpperCase();
 
-              <div className="w-full flex items-center gap-3.5">
-                {/* Vertically centered icon container */}
-                <div className="w-9 h-9 rounded-full bg-[#f45b95]/15 text-[#f45b95] flex items-center justify-center shrink-0">
-                  <MessageCircle size={16} />
-                </div>
-                
-                <div className="flex flex-col flex-1 gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-neutral-900 dark:text-white">
-                      {notif.title}
+            return (
+              <div
+                key={notif.id}
+                onClick={() => handleNotificationClick(notif)}
+                className={`w-full flex items-center justify-between p-5 rounded-[24px] border transition shadow-sm cursor-pointer hover:border-[#f45b95]/50 ${
+                  notif.is_read
+                    ? "bg-white/70 dark:bg-[#16171f]/70 border-neutral-200/60 dark:border-white/[0.04]"
+                    : "bg-white dark:bg-[#16171f] border-[#f45b95]/40 dark:border-[#f45b95]/30 ring-1 ring-[#f45b95]/20"
+                }`}
+              >
+                <div className="flex items-center gap-5 pl-2 min-w-0 flex-1">
+                  {/* Unread Pink Dot with clean space before avatar */}
+                  <div className="w-3 shrink-0 flex items-center justify-center">
+                    {!notif.is_read && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#f45b95] shadow-[0_0_8px_rgba(244,91,149,0.8)]" />
+                    )}
+                  </div>
+
+                  {/* Avatar Icon */}
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-800 flex items-center justify-center border border-neutral-200 dark:border-neutral-700 shrink-0">
+                    {notif.avatar_url ? (
+                      <img src={notif.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-black text-sm">
+                        {rawText.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Uppercase Notification Text and Timestamp */}
+                  <div className="flex flex-col gap-1 min-w-0 flex-1 justify-center">
+                    <p className="text-sm text-neutral-800 dark:text-neutral-200 leading-relaxed font-semibold break-words">
+                      {notif.type === "direct_message" ? (
+                        <>
+                          <span className="uppercase font-bold">{notif.actor_name || notif.title?.split(" ")[0]}</span> has messaged you!
+                        </>
+                      ) : (
+                        <span className="uppercase">{uppercaseText}</span>
+                      )}
+                    </p>
+                    <span className="text-[11px] text-neutral-400 font-medium">
+                      {new Date(notif.created_at).toLocaleDateString()} at{" "}
+                      {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                    {notif.body}
-                  </p>
-                  <span className="text-[10px] text-neutral-400 font-medium">
-                    {new Date(notif.created_at).toLocaleDateString()} at{" "}
-                    {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -241,7 +259,13 @@ function NotificationsContent() {
 
 export default function NotificationsPage() {
   return (
-    <Suspense fallback={<div className="w-full py-16 flex items-center justify-center"><div className="w-7 h-7 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" /></div>}>
+    <Suspense
+      fallback={
+        <div className="w-full py-16 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" />
+        </div>
+      }
+    >
       <NotificationsContent />
     </Suspense>
   );

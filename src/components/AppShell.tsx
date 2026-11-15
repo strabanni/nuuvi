@@ -78,7 +78,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-
+  
   // Second bar toggle state (starts closed, opens strictly on click)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -289,6 +289,44 @@ useEffect(() => {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Inside your global AppShell or Navbar component:
+  useEffect(() => {
+    if (!user?.id) return;
+
+    async function checkUnread() {
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+        
+      // Set your unread badge state here (e.g., setHasUnreadNotifications((count ?? 0) > 0))
+    }
+
+    checkUnread();
+
+    // Global realtime listener for the bell icon
+    const globalChannel = supabase
+      .channel(`global-notifs-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // Trigger your unread badge state to turn on / show pink dot!
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(globalChannel);
+    };
+  }, [user?.id]);
 
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [hasUnreadMessages, setHasUnreadMessages] = useState<boolean>(false);
