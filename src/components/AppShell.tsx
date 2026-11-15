@@ -127,7 +127,7 @@ useEffect(() => {
         const { data, error } = await supabase
           .from("account_security")
           .select("must_change_password")
-          .eq("user_id", user.id)
+          .eq("user_id", user?.id)
           .maybeSingle();
 
         clearTimeout(timer);
@@ -298,7 +298,7 @@ useEffect(() => {
       const { count } = await supabase
         .from("notifications")
         .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
+        .eq("user_id", user?.id)
         .eq("is_read", false);
         
       // Set your unread badge state here (e.g., setHasUnreadNotifications((count ?? 0) > 0))
