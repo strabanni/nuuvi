@@ -30,6 +30,7 @@ import {
   FileText
 } from "lucide-react";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
+import CreateStoryModal from "@/components/CreateStoryModal";
 
 const bagelFont = Bagel_Fat_One({
   weight: "400",
@@ -86,6 +87,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [charactersCount, setCharactersCount] = useState<number>(0);
   const [onlineUsersCount, setOnlineUsersCount] = useState<number>(1);
   const [userStories, setUserStories] = useState<UserStory[]>([]);
+
+  const [isCreateStoryOpen, setIsCreateStoryOpen] = useState(false);
 
   // Inside AppShell.tsx
   const WELCOME_PHRASES = [
@@ -670,13 +673,14 @@ useEffect(() => {
               );
             })}
 
-            <Link
-              href="/stories/new"
-              className="w-9 h-9 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-400 flex items-center justify-center hover:border-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
-              title="Create a Story"
+            <button
+              type="button"
+              onClick={() => setIsCreateStoryOpen(true)}
+              className="w-10 h-10 rounded-full bg-neutral-800 hover:bg-[#f45b95] text-neutral-400 hover:text-white flex items-center justify-center transition shadow-md"
+              title="Start a story"
             >
-              <Plus size={16} />
-            </Link>
+              <Plus size={18} />
+            </button>
           </div>
 
           {/* BOTTOM SECTION: Header Banner Icons */}

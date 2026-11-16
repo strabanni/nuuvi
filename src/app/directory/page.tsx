@@ -30,10 +30,13 @@ interface Character {
   is_npc?: boolean;
   npc_tag?: string;
   user_id: string;
+  character_number?: number | null;
+  writer_number?: number | null;
   owner?: {
     username: string;
     display_name: string;
     avatar_url?: string;
+    user_number?: number;
   };
 }
 
@@ -73,7 +76,8 @@ export default function DirectoryPage() {
         tagline, 
         is_npc, 
         npc_tag,
-        user_id
+        user_id,
+        character_number
       `)
       .order("created_at", { ascending: false });
 
@@ -84,27 +88,47 @@ export default function DirectoryPage() {
     }
 
     if (charData) {
-      const userIds = Array.from(new Set(charData.map((c) => c.user_id).filter(Boolean)));
-      
-      let profileMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from("profiles")
-          .select("id, username, display_name, avatar_url")
-          .in("id", userIds);
+      const userIds = Array.from(
+        new Set(charData.map((character) => character.user_id).filter(Boolean))
+      );
 
-        if (profilesData) {
-          profileMap = Object.fromEntries(profilesData.map((p) => [p.id, p]));
-        }
-      }
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, user_number")
+        .in("id", userIds);
 
-      const formatted: Character[] = charData.map((c: any) => ({
-        ...c,
-        owner: profileMap[c.user_id] || {
-          username: "writer",
-          display_name: "Writer",
-        },
-      }));
+      console.log("Profiles lookup:", {
+        userIds,
+        profilesData,
+        profilesError,
+      });
+
+      const profileMap = Object.fromEntries(
+        (profilesData ?? []).map((profile) => [String(profile.id), profile])
+      );
+
+      const formatted: Character[] = charData.map((character) => {
+        const owner = profileMap[String(character.user_id)];
+
+        return {
+          ...character,
+          writer_number: owner?.user_number ?? null,
+          owner: owner ?? {
+            username: "writer",
+            display_name: "Writer",
+          },
+        };
+      });
+
+      console.log(
+        "Character URL data:",
+        formatted.map(({ id, user_id, writer_number, character_number }) => ({
+          id,
+          user_id,
+          writer_number,
+          character_number,
+        }))
+      );
 
       setCharacters(formatted);
     }
@@ -359,8 +383,17 @@ function CharacterCardItem({
 }) {
   const router = useRouter();
   const isOwner = currentUserId && character.user_id === currentUserId;
-  const profileHref = `/phone/${character.id}`;
+  const profileHref =
+  character.writer_number != null && character.character_number != null
+    ? `/${character.writer_number}/c/${character.character_number}`
+    : `/phone/${character.id}`;
   const editHref = `/characters/${character.id}/edit`;
+
+  console.log({
+    writer_number: character.writer_number,
+    character_number: character.character_number,
+    profileHref,
+  });
 
   const showEdit = isMeTab && isOwner;
 
