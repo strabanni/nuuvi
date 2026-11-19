@@ -37,3 +37,109 @@ input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
   -webkit-text-fill-color: #000;
 }
+
+.post-formatted {
+  overflow-wrap: anywhere;
+}
+
+.post-formatted pre,
+.post-formatted code {
+  border-radius: 0.5rem;
+  background: rgb(0 0 0 / 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.post-formatted pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  white-space: pre;
+}
+
+.post-formatted code {
+  padding: 0.1rem 0.3rem;
+}
+
+.post-formatted blockquote,
+.post-formatted .post-box {
+  margin: 0.5rem 0;
+  border-left: 3px solid #f45b95;
+  border-radius: 0.5rem;
+  background: rgb(244 91 149 / 0.08);
+  padding: 0.5rem 0.75rem;
+}
+
+.post-formatted .post-center {
+  text-align: center;
+}
+
+.post-formatted .post-left {
+  text-align: left;
+}
+
+.post-formatted .post-right {
+  text-align: right;
+}
+
+.post-formatted .post-align-justify {
+  text-align: justify;
+}
+
+.post-formatted .post-indent {
+  margin-left: 1.5rem;
+}
+
+.post-formatted .post-small {
+  color: #737373;
+  font-size: 0.75rem;
+}
+
+.post-formatted .post-caps {
+  text-transform: uppercase;
+}
+
+.post-formatted .post-spoiler {
+  border-radius: 0.25rem;
+  background: currentColor;
+  color: transparent;
+  cursor: pointer;
+}
+
+.post-formatted .post-spoiler:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.post-formatted .post-inline-image {
+  display: block;
+  max-width: min(100%, 36rem);
+  max-height: 32rem;
+  margin-top: 0.5rem;
+  border-radius: 0.75rem;
+}
+
+.post-formatted ul,
+.post-formatted ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.post-formatted ul {
+  list-style: disc;
+}
+
+.post-formatted ol {
+  list-style: decimal;
+}
+
+.post-formatted li + li {
+  margin-top: 0.2rem;
+}
+
+.post-formatted blockquote cite {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #f45b95;
+  font-size: 0.8em;
+  font-style: normal;
+  font-weight: 600;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -25,6 +25,7 @@ import {
   LayoutGrid,
   User,
   Power,
+  Sparkles,
   Menu,
   X,
   FileText
@@ -54,10 +55,19 @@ interface Profile {
 }
 
 interface UserStory {
-  id: string | number;
+  id: string;
+  story_number: number;
   title: string;
-  icon?: string | null;
-  color?: string | null;
+  icon_url: string | null;
+  icon_color: string | null;
+  visibility: string | null;
+}
+
+interface ChangelogEntry {
+  code: string;
+  date: string;
+  title: string;
+  items: string[];
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -79,6 +89,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+
+  const [latestChangelog, setLatestChangelog] = useState<ChangelogEntry | null>(null);
+  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
   
   // Second bar toggle state (starts closed, opens strictly on click)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -162,51 +176,185 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) {
+      setLatestChangelog(null);
+      setHasUnseenUpdate(false);
+      return;
+    }
+    
     const currentUser = user;
 
-    async function loadStories() {
-      const { data, error } = await supabase
-        .from("story_members")
-        .select(`
-          story_id,
-          stories (
-            id,
-            title,
-            icon,
-            color
-          )
-        `)
-        .eq("user_id", currentUser.id);
+    let cancelled = false;
 
-      if (!error && data) {
-        const list = data
-          .map((row: any) => row.stories)
-          .filter(Boolean) as UserStory[];
-        setUserStories(list);
+    async function loadChangelog() {
+      try {
+        const response = await fetch("/changelog.json", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const json = await response.json();
+
+        const entries: ChangelogEntry[] = Array.isArray(json)
+          ? json
+          : Array.isArray(json.entries)
+            ? json.entries
+            : json.code
+              ? [json as ChangelogEntry]
+              : [];
+
+        const latest = entries[0];
+        console.log("Changelog data:", json, "Latest entry:", latest);
+
+        if (cancelled || !latest) return;
+
+        setLatestChangelog(latest);
+
+        const seenCode = localStorage.getItem(
+          `nuuvi_seen_update_${currentUser.id}`
+        );
+
+        setHasUnseenUpdate(seenCode !== latest.code);
+      } catch (error) {
+        console.error("Could not load changelog:", error);
       }
     }
 
-    loadStories();
+    void loadChangelog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const refreshUserStories = useCallback(async () => {
+    if (!user?.id) {
+      setUserStories([]);
+      return;
+    }
+
+    const currentUser = user;
+
+    const [
+      { data: memberships, error: membershipError },
+      { data: ownedStories, error: ownedError },
+      { data: profileData, error: profileError },
+    ] = await Promise.all([
+      supabase
+        .from("story_members")
+        .select("story_id")
+        .eq("user_id", currentUser.id),
+
+      supabase
+        .from("stories")
+        .select("id")
+        .eq("user_id", currentUser.id),
+
+      supabase
+        .from("profiles")
+        .select("is_admin, role")
+        .eq("id", currentUser.id)
+        .maybeSingle(),
+    ]);
+
+    if (membershipError || ownedError || profileError) {
+      console.error(
+        "Could not determine accessible stories:",
+        membershipError?.message || ownedError?.message || profileError?.message
+      );
+      return;
+    }
+
+    const publicResult = await supabase
+      .from("stories")
+      .select("id, story_number, title, icon_url, icon_color, visibility")
+      .in("visibility", ["Public", "Public: anyone can join"]);
+
+    if (publicResult.error) {
+      console.error("Could not load public stories:", publicResult.error.message);
+      return;
+    }
+
+    let privateStories: UserStory[] = [];
+    const isSiteOwner = profileData?.is_admin === true || profileData?.role == "admin";
+
+    if (isSiteOwner) {
+      const { data, error } = await supabase
+        .from("stories")
+        .select("id, story_number, title, icon_url, icon_color, visibility");
+
+      if (error) {
+        console.error("Could not load all stories:", error.message);
+        return;
+      }
+
+      setUserStories(
+        [...(data ?? [])].sort((a, b) => a.story_number - b.story_number)
+      );
+      return;
+    }
+
+    const accessibleIds = [
+      ...new Set([
+        ...(memberships ?? []).map((row) => row.story_id),
+        ...(ownedStories ?? []).map((row) => row.id),
+      ]),
+    ];
+
+    if (accessibleIds.length > 0) {
+      const { data, error } = await supabase
+        .from("stories")
+        .select("id, story_number, title, icon_url, icon_color, visibility")
+        .in("id", accessibleIds);
+
+      if (error) {
+        console.error("Could not load joined stories:", error.message);
+        return;
+      }
+
+      privateStories = (data ?? []) as UserStory[];
+    }
+
+    const uniqueStories = new Map<string, UserStory>();
+    for (const story of [...(publicResult.data ?? []), ...privateStories]) {
+      uniqueStories.set(story.id, story as UserStory);
+    }
+
+    setUserStories(
+      [...uniqueStories.values()].sort((a, b) => a.story_number - b.story_number)
+    );
+  }, [user]);
+
+  useEffect(() => {
+    void refreshUserStories();
+
+    if (!user?.id) return;
 
     const storiesChannel = supabase
-      .channel("shell-stories-channel")
+      .channel(`shell-stories-${user.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "story_members",
-          filter: `user_id=eq.${currentUser.id}`,
+          filter: `user_id=eq.${user.id}`,
         },
-        () => loadStories()
+        () => void refreshUserStories()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "stories",
+        },
+        () => void refreshUserStories()
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(storiesChannel);
+      void supabase.removeChannel(storiesChannel);
     };
-  }, [user]);
+  }, [user?.id, refreshUserStories]);
 
   useEffect(() => {
     if (!user) return;
@@ -376,37 +524,71 @@ useEffect(() => {
     const currentUser = user;
 
     async function checkUnreadMessages() {
-      const { data: convs } = await supabase
+      const { data: convs, error } = await supabase
         .from("dm_conversations")
-        .select("id, user_a, user_b, last_message_at")
+        .select("id")
         .or(`user_a.eq.${currentUser.id},user_b.eq.${currentUser.id}`);
 
-      if (convs && convs.length > 0) {
-        let unreadFound = false;
-        for (const conv of convs) {
-          const { data: readData } = await supabase
-            .from("dm_reads")
-            .select("last_read_at")
-            .eq("conversation_id", conv.id)
-            .eq("user_id", currentUser.id)
+      if (error) {
+        console.error("Could not load DM conversations:", error.message);
+        return;
+      }
+
+      if (!convs?.length) {
+        setHasUnreadMessages(false);
+        return;
+      }
+
+      const conversationIds = convs.map((conversation) => conversation.id);
+
+      const { data: reads, error: readsError } = await supabase
+        .from("dm_reads")
+        .select("conversation_id, last_read_at")
+        .eq("user_id", currentUser.id)
+        .in("conversation_id", conversationIds);
+
+      if (readsError) {
+        console.error("Could not load DM read markers:", readsError.message);
+        return;
+      }
+
+      const readAtByConversation = new Map(
+        (reads ?? []).map((row) => [row.conversation_id, row.last_read_at])
+      );
+
+      const unreadResults = await Promise.all(
+        convs.map(async (conversation) => {
+          const { data: latestIncoming, error: messageError } = await supabase
+            .from("dm_messages")
+            .select("created_at")
+            .eq("conversation_id", conversation.id)
+            .neq("sender_id", currentUser.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-          const lastRead = readData?.last_read_at ? new Date(readData.last_read_at) : new Date(0);
-          const lastMsg = new Date(conv.last_message_at);
-
-          if (lastMsg > lastRead) {
-            unreadFound = true;
-            break;
+          if (messageError) {
+            console.error("Could not check incoming DM:", messageError.message);
+            return false;
           }
-        }
-        setHasUnreadMessages(unreadFound);
-      }
+
+          if (!latestIncoming) return false;
+
+          const lastReadAt = readAtByConversation.get(conversation.id);
+          return (
+            new Date(latestIncoming.created_at).getTime() >
+            new Date(lastReadAt || 0).getTime()
+          );
+        })
+      );
+
+      setHasUnreadMessages(unreadResults.some(Boolean));
     }
 
     checkUnreadMessages();
 
     const msgChannel = supabase
-      .channel("shell-unread-messages")
+      .channel(`shell-unread-messages-${currentUser.id}`)
       .on(
         "postgres_changes",
         {
@@ -414,11 +596,20 @@ useEffect(() => {
           schema: "public",
           table: "dm_messages",
         },
-        (payload) => {
-          const newMsg = payload.new as any;
-          if (newMsg.sender_id !== currentUser.id) {
-            setHasUnreadMessages(true);
-          }
+        () => {
+          void checkUnreadMessages();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "dm_reads",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        () => {
+          void checkUnreadMessages();
         }
       )
       .subscribe();
@@ -430,7 +621,7 @@ useEffect(() => {
   
   if (!mounted || authLoading) {
     return (
-      <div className="min-h-screen w-full bg-[#e8eaee] dark:bg-neutral-950 flex items-center justify-center">
+      <div className="h-dvh w-full overflow-hidden bg-[#e8eaee] dark:bg-neutral-950 flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-[#f45b95] border-t-transparent animate-spin" />
       </div>
     );
@@ -469,8 +660,20 @@ useEffect(() => {
   const userAccentColor = profile?.user_colors?.[0] || "#8e929b";
   const profileRoute = profile?.user_number ? `/profile/${profile.user_number}` : `/profile/${displayHandle}`;
 
+  function dismissWhatsNew() {
+    if (latestChangelog && user?.id) {
+      localStorage.setItem(
+        `nuuvi_seen_update_${user.id}`,
+        latestChangelog.code
+      );
+    }
+
+    setHasUnseenUpdate(false);
+    setIsWhatsNewOpen(false);
+  }
+
   return (
-    <div className="min-h-screen w-full bg-[#e8eaee] dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 p-3 sm:p-4 flex flex-col gap-3 font-sans selection:bg-[#f45b95] selection:text-white transition-colors duration-200">
+    <div className="h-dvh w-full overflow-hidden bg-[#e8eaee] dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 p-3 sm:p-4 flex flex-col gap-3 font-sans selection:bg-[#f45b95] selection:text-white transition-colors duration-200">
       
       {/* 1. TOP HEADER / APP BAR */}
       <header className="w-full bg-white dark:bg-neutral-900 rounded-[28px] shadow-sm border border-neutral-200/50 dark:border-neutral-800 flex flex-col overflow-hidden transition-colors duration-200 shrink-0">
@@ -553,9 +756,10 @@ useEffect(() => {
             >
               <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="absolute -top-2.5 -right-2.5 min-w-4 h-4 px-1 rounded-full bg-[#f45b95] text-white font-black text-[9px] flex items-center justify-center border-2 border-white dark:border-neutral-900 shadow-[0_0_8px_rgba(244,91,149,0.6)] animate-in zoom-in-75 duration-150 leading-none">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
+                <span
+                  aria-label="Unread notifications"
+                  className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#f45b95] border-2 border-white dark:border-neutral-900"
+                />
               )}
             </Link>
 
@@ -647,22 +851,22 @@ useEffect(() => {
 
             {/* DYNAMIC STORY ICONS */}
             {userStories.map((story) => {
-              const isActive = pathname.startsWith(`/s/${story.id}`);
+              const isActive = pathname.startsWith(`/s/${story.story_number}`);
               const initial = story.title ? story.title.charAt(0).toUpperCase() : "?";
 
               return (
                 <Link
                   key={story.id}
-                  href={`/s/${story.id}`}
+                  href={`/s/${story.story_number}`}
                   title={story.title}
                   className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden transition ${
                     isActive ? "ring-2 ring-[#f45b95]" : "hover:ring-2 hover:ring-[#f45b95]"
                   }`}
-                  style={{ backgroundColor: story.color || "#262626" }}
+                  style={{ backgroundColor: story.icon_color || "#262626" }}
                 >
-                  {story.icon ? (
+                  {story.icon_color ? (
                     <img
-                      src={story.icon}
+                      src={story.icon_url ?? ""}
                       alt={story.title}
                       className="w-full h-full object-cover"
                     />
@@ -684,66 +888,74 @@ useEffect(() => {
           </div>
 
           {/* BOTTOM SECTION: Header Banner Icons */}
-          <div className="flex flex-col items-center gap-3 w-full pt-3 border-t border-neutral-100 dark:border-neutral-800 text-neutral-400 dark:text-neutral-500">
-            <button
-              type="button"
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
-              title="Toggle Theme"
-            >
-              {mounted && resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
+          <div className="flex w-full flex-col items-center gap-2 text-neutral-400 dark:text-neutral-500">
+            {latestChangelog && (
+              <button
+                type="button"
+                onClick={() => setIsWhatsNewOpen(true)}
+                aria-label={`What's new: ${latestChangelog.code}`}
+                title={`What's new · ${latestChangelog.code}`}
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-100 text-[#f45b95] transition hover:bg-[#f45b95]/10 dark:border-neutral-700 dark:bg-neutral-800"
+              >
+                <Sparkles size={16} />
+                {hasUnseenUpdate && (
+                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#f45b95]" />
+                )}
+              </button>
+            )}
+            <div className="flex flex-col items-center gap-3 w-full pt-3 border-t border-neutral-100 dark:border-neutral-800 text-neutral-400 dark:text-neutral-500">
+              <button
+                type="button"
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+                title="Toggle Theme"
+              >
+                {mounted && resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
 
-            <Link
-              href="/nu"
-              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
-              title="THE NU"
-            >
-              <LayoutGrid size={16} />
-            </Link>
+              <Link
+                href="/nu"
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+                title="THE NU"
+              >
+                <LayoutGrid size={16} />
+              </Link>
 
-            <Link
-              href="/notifications"
-              className="relative w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
-              title="Notifications"
-            >
-              <Bell size={16} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[#f45b95] text-white font-black text-[8px] flex items-center justify-center leading-none">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </Link>
+              <Link
+                href="/notifications"
+                className="relative w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+                title="Notifications"
+              >
+                <Bell size={16} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[#f45b95] text-white font-black text-[8px] flex items-center justify-center leading-none">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </Link>
 
-            <Link
-              href={profileRoute}
-              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
-              title="Profile"
-            >
-              <User size={16} />
-            </Link>
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:text-rose-500 transition"
+                title="Sign Out"
+              >
+                <Power size={16} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => signOut()}
-              className="w-9 h-9 rounded-xl flex items-center justify-center hover:text-rose-500 transition"
-              title="Sign Out"
-            >
-              <Power size={16} />
-            </button>
-
-            <Link
-              href={profileRoute}
-              className="w-9 h-9 rounded-full bg-[#f45b95] text-white font-black text-xs flex items-center justify-center overflow-hidden shadow-sm mt-1"
-              title={displayName}
-            >
-              {displayAvatar ? (
-                <img src={displayAvatar} alt="" className="w-full h-full object-cover" />
-              ) : (
-                displayName.charAt(0).toUpperCase()
-              )}
-            </Link>
-          </div>
+              <Link
+                href={profileRoute}
+                className="w-9 h-9 rounded-full bg-[#f45b95] text-white font-black text-xs flex items-center justify-center overflow-hidden shadow-sm mt-1"
+                title={displayName}
+              >
+                {displayAvatar ? (
+                  <img src={displayAvatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  displayName.charAt(0).toUpperCase()
+                )}
+              </Link>
+            </div>
+          </div> 
         </aside>
 
         {/* SIDEBAR 2: TOGGLEABLE OVERLAY DRAWER (Hides completely off to the left when closed) */}
@@ -952,16 +1164,16 @@ useEffect(() => {
                 userStories.map((story) => (
                   <Link
                     key={story.id}
-                    href={`/s/${story.id}`}
+                    href={`/s/${story.story_number}`}
                     onClick={() => setIsSidebarOpen(false)}
                     className="flex items-center gap-2 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg cursor-pointer transition"
                   >
                     <div 
                       className="w-5 h-5 rounded-md text-white flex items-center justify-center text-[9px] font-bold overflow-hidden shrink-0"
-                      style={{ backgroundColor: story.color || "#262626" }}
+                      style={{ backgroundColor: story.icon_color || "#262626" }}
                     >
-                      {story.icon ? (
-                        <img src={story.icon} alt="" className="w-full h-full object-cover" />
+                      {story.icon_url ? (
+                        <img src={story.icon_url} alt="" className="w-full h-full object-cover" />
                       ) : (
                         story.title.charAt(0).toUpperCase()
                       )}
@@ -975,10 +1187,97 @@ useEffect(() => {
         </aside>
 
         {/* 3. CENTER CONTENT CANVAS */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {children}
         </div>
       </div>
+      {isWhatsNewOpen && latestChangelog && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) dismissWhatsNew();
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="whats-new-title"
+            className="flex max-h-[90dvh] w-full max-w-sm flex-col overflow-hidden rounded-[28px] border border-white/15 bg-gradient-to-br from-[#41243f] via-[#201b32] to-[#171725] p-3 text-white shadow-2xl"
+          >
+            <div className="relative overflow-hidden rounded-[22px] border border-white/10 bg-black/10 p-4">
+              <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-[#f45b95]/30 blur-3xl" />
+              <div className="absolute -right-10 top-10 h-40 w-40 rounded-full bg-violet-400/25 blur-3xl" />
+
+              <div className="relative flex items-start justify-between">
+                <div className="rounded-lg border border-dashed border-white/40 px-2 py-1 -rotate-6">
+                  <div className="text-xs font-bold">{latestChangelog.code}</div>
+                  <div className="text-[9px] text-white/70">
+                    {new Date(`${latestChangelog.date}T12:00:00`).toLocaleDateString(
+                      undefined,
+                      { month: "short", day: "numeric", year: "numeric" }
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={dismissWhatsNew}
+                  aria-label="Close What's New"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-white/80 hover:bg-white/25"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="relative py-3 text-center">
+                <Sparkles size={34} className="mx-auto mb-2 text-white" />
+                <p className="text-[9px] font-bold tracking-[0.35em] text-white/70">
+                  OUR NEWEST
+                </p>
+                <h2
+                  id="whats-new-title"
+                  className="text-3xl font-black tracking-wide text-[#f6a1d0]"
+                >
+                  ADDITIONS
+                </h2>
+                <p className="mt-1 text-sm text-white/80">
+                  {latestChangelog.title}
+                </p>
+              </div>
+
+              <ol className="relative max-h-[46dvh] space-y-2 overflow-y-auto pr-1">
+                {latestChangelog.items.map((item, index) => (
+                  <li
+                    key={`${latestChangelog.code}-${index}`}
+                    className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.08] p-3 text-xs leading-relaxed text-white/90"
+                  >
+                    <span className="shrink-0 font-black text-[#ff78ae]">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <button
+              type="button"
+              onClick={dismissWhatsNew}
+              className="mt-3 h-11 shrink-0 rounded-full bg-gradient-to-r from-[#f45b95] to-[#c084fc] text-sm font-bold text-white shadow-lg"
+            >
+              Continue
+            </button>
+          </section>
+        </div>
+      )}
+      <CreateStoryModal
+        isOpen={isCreateStoryOpen}
+        onClose={() => setIsCreateStoryOpen(false)}
+        onStoryCreated={() => {
+          void refreshUserStories();
+        }}
+      />
     </div>
   );
 }

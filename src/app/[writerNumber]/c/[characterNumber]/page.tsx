@@ -359,10 +359,43 @@ return stablePool.slice(0, count).map((comment) => {
   });
 };
 
+function getMusicEmbedUrl(trackUrl?: string): string | null {
+  if (!trackUrl) return null;
+
+  try {
+    const url = new URL(trackUrl);
+    const host = url.hostname.toLowerCase();
+
+    if (host === "open.spotify.com") {
+      const match = url.pathname.match(/^\/(track|album|playlist)\/([A-Za-z0-9]+)/);
+
+      if (!match) return null;
+
+      return `https://open.spotify.com/embed/${match[1]}/${match[2]}`;
+    }
+
+    if (host === "music.apple.com") {
+      return `https://embed.music.apple.com${url.pathname}${url.search}`;
+    }
+
+    if (host === "embed.music.apple.com") {
+      return url.toString();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export default function CharacterProfilePage() {
   const params = useParams();
   const writerNumber = params?.writerNumber as string | undefined;
   const characterNumber = params?.characterNumber as string | undefined;
+  const characterProfileHref =
+  writerNumber && characterNumber
+    ? `/${writerNumber}/c/${characterNumber}`
+    : "/directory";
   const { user } = useAuth();
   const router = useRouter();
 
@@ -398,7 +431,8 @@ export default function CharacterProfilePage() {
   const [postCommentDate, setPostCommentDate] = useState("");
   const [postCommentsMap, setPostCommentsMap] = useState<Record<string, any[]>>({});
   const [isSongPlaying, setIsSongPlaying] = useState(false);
-  
+
+
   // Reply State per comment ID
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [replyInput, setReplyInput] = useState("");
@@ -460,7 +494,10 @@ export default function CharacterProfilePage() {
   const [songTitle, setSongTitle] = useState("");
   const [songArtist, setSongArtist] = useState("");
   const [songLink, setSongLink] = useState("");
-
+  const [songPreviewUrl, setSongPreviewUrl] = useState("");
+  const songAudioRef = useRef<HTMLAudioElement>(null);
+  const [musicEmbedOpen, setMusicEmbedOpen] = useState(false);
+  
   const [postLikesInput, setPostLikesInput] = useState("");
   const [postCommentsCountInput, setPostCommentsCountInput] = useState("");
   const [postDateInput, setPostDateInput] = useState("");
@@ -553,8 +590,16 @@ export default function CharacterProfilePage() {
       setTagline(charData.tagline || "");
       setAkaLine(charData.aka_line || "");
       setBio(charData.bio || "");
-      setCustomFollowers(charData.followers_count ? String(charData.followers_count) : "");
-      setCustomFollowing(charData.following_count ? String(charData.following_count) : "");
+      setCustomFollowers(
+        charData.followers_count != null
+          ? String(charData.followers_count)
+          : ""
+      );
+      setCustomFollowing(
+        charData.following_count != null
+          ? String(charData.following_count)
+          : ""
+      );
       setIsVerified(!!charData.is_verified);
       setIsBrand(!!charData.is_brand);
       setIsNpc(!!charData.is_npc);
@@ -696,6 +741,16 @@ export default function CharacterProfilePage() {
       // Ignore storage errors.
     }
   }, [selectedPost, postModalRestored]);
+
+  useEffect(() => {
+    const audio = songAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    setIsSongPlaying(false);
+    setMusicEmbedOpen(false);
+  }, [selectedPost?.id]);
 
   const isOwner = user && character && user.id === character.user_id;
 
@@ -876,8 +931,14 @@ export default function CharacterProfilePage() {
         tagline: tagline.trim() || null,
         aka_line: akaLine.trim() || null,
         bio: bio.trim() || null,
-        followers_count: customFollowers ? parseInt(customFollowers, 10) : character.followers_count || 0,
-        following_count: customFollowing ? parseInt(customFollowing, 10) : character.following_count || 0,
+        followers_count:
+          customFollowers === ""
+            ? character.followers_count ?? 0
+            : Number(customFollowers),
+        following_count:
+          customFollowing === ""
+            ? character.following_count ?? 0
+            : Number(customFollowing),
         is_verified: isVerified,
         is_brand: isBrand,
         is_npc: isNpc,
@@ -889,13 +950,14 @@ export default function CharacterProfilePage() {
         .from("characters")
         .update(payload)
         .eq("id", character.id)
-        .select()
+        .select("*")
         .single();
 
       if (error) throw error;
 
       setCharacter(data);
       setIsEditModalOpen(false);
+
     } catch (err: any) {
       alert("Error saving profile: " + err.message);
     } finally {
@@ -953,7 +1015,8 @@ export default function CharacterProfilePage() {
       const formattedSong = songTitle.trim() ? {
         title: songTitle.trim(),
         artist: songArtist.trim() || "Unknown Artist",
-        link: songLink.trim() || "#"
+        link: songLink.trim() || "#",
+        preview_url: songPreviewUrl.trim() || null,
       } : null;
 
       const hasTagOrMention = postImages.length > 0 || postCaption.includes("@");
@@ -1157,6 +1220,8 @@ const toggleWriterCharacterFollow = async (charId: string) => {
         const notifText = `${followerChar?.name || "A character"} started following ${character.name}`;
         const { error: notifError } = await supabase.from("notifications").insert({
           user_id: character.user_id,
+          actor_name: followerChar?.name || "A character",
+          target_name: character.name,
           type: "follow",
           title: "New Follower",
           body: notifText,
@@ -1578,40 +1643,45 @@ const toggleWriterCharacterFollow = async (charId: string) => {
         const isLikedByAny = likedChars.length > 0;
         
         const authoredComments =
-  postCommentsMap[currentPostId] ??
-  getAuthoredComments(selectedPost.comments);
+          postCommentsMap[currentPostId] ??
+          getAuthoredComments(selectedPost.comments);
 
-const totalCommentCount = Math.max(
-  Number(selectedPost.comments_count) || 0,
-  authoredComments.length
-);
+        const totalCommentCount = Math.max(
+          Number(selectedPost.comments_count) || 0,
+          authoredComments.length
+        );
 
-const generatedCount = Math.max(
-  0,
-  totalCommentCount - authoredComments.length
-);
+        const generatedCount = Math.max(
+          0,
+          totalCommentCount - authoredComments.length
+        );
 
-const generatedComments = generateContextualComments(
-  selectedPost,
-  generatedCount
-);
+        const generatedComments = generateContextualComments(
+          selectedPost,
+          generatedCount
+        );
 
-// Character comments appear first; generated comments fill the remaining
-// preview slots. The preview never displays more than 15 comments.
-const displayedComments = [
-  ...authoredComments,
-  ...generatedComments,
-].slice(0, 15);
+        // Character comments appear first; generated comments fill the remaining
+        // preview slots. The preview never displays more than 15 comments.
+        const displayedComments = [
+          ...authoredComments,
+          ...generatedComments,
+        ].slice(0, 15);
 
-const hiddenCommentsCount = Math.max(
-  0,
-  totalCommentCount - displayedComments.length
-);
+        const hiddenCommentsCount = Math.max(
+          0,
+          totalCommentCount - displayedComments.length
+        );
 
         return (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
             <div className="relative w-full max-w-lg max-h-[95vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white dark:bg-[#13141b] text-neutral-900 dark:text-white rounded-[28px] border-none shadow-2xl flex flex-col text-sm">
-              
+              <audio
+                ref={songAudioRef}
+                onEnded={() => setIsSongPlaying(false)}
+                preload="none"
+                className="hidden"
+              />
               {/* Modal Header */}
               <div className="flex flex-col p-4 border-b border-neutral-200 dark:border-white/10 gap-2">
                 <div className="flex items-center justify-between">
@@ -1619,7 +1689,7 @@ const hiddenCommentsCount = Math.max(
                     <div 
                       onClick={() => {
                         setSelectedPost(null);
-                        router.push(`/phone/${character.id}`);
+                        router.push(characterProfileHref);
                       }}
                       className="w-10 h-10 rounded-full overflow-hidden bg-neutral-800 border-2 border-[#f45b95] shrink-0 cursor-pointer hover:opacity-90"
                     >
@@ -1630,7 +1700,7 @@ const hiddenCommentsCount = Math.max(
                         <span 
                           onClick={() => {
                             setSelectedPost(null);
-                            router.push(`/phone/${character.id}`);
+                            router.push(characterProfileHref);
                           }}
                           className="font-semibold text-sm cursor-pointer hover:underline"
                         >
@@ -1649,15 +1719,75 @@ const hiddenCommentsCount = Math.max(
 
                       {selectedPost.song && (
                         <div className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                          <Music size={12} className="text-[#f45b95]" />
-                          <span>{selectedPost.song.title} · {selectedPost.song.artist}</span>
                           <button
                             type="button"
-                            onClick={() => setIsSongPlaying((prev) => !prev)}
-                            className="ml-1 text-neutral-400 hover:text-white transition"
+                            onClick={async () => {
+                              const audio = songAudioRef.current;
+                              if (!audio) return;
+
+                              // Clicking again pauses the currently playing preview.
+                              if (!audio.paused) {
+                                audio.pause();
+                                setIsSongPlaying(false);
+                                return;
+                              }
+
+                              try {
+                                // Use a saved direct preview URL if this post has one.
+                                const savedPreviewUrl = selectedPost.song?.preview_url;
+
+                                let previewUrl =
+                                  typeof savedPreviewUrl === "string" &&
+                                  /^https:\/\/audio-ssl\.itunes\.apple\.com\//i.test(savedPreviewUrl)
+                                    ? savedPreviewUrl
+                                    : null;
+                                // Otherwise, find a preview using the title and artist.
+                                if (!previewUrl) {
+                                  const response = await fetch("/api/song-preview", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      title: selectedPost.song?.title,
+                                      artist: selectedPost.song?.artist,
+                                    }),
+                                  });
+
+                                  const result = await response.json();
+                                  previewUrl = result.previewUrl || null;
+                                }
+
+                                if (previewUrl) {
+                                  setMusicEmbedOpen(false);
+                                  audio.src = previewUrl;
+                                  audio.load();
+                                  await audio.play();
+                                  setIsSongPlaying(true);
+                                  return;
+                                }
+
+                                // Apple may not have a preview for this song. Fall back to the provider embed.
+                                if (getMusicEmbedUrl(selectedPost.song?.link)) {
+                                  setMusicEmbedOpen((open) => !open);
+                                  return;
+                                }
+
+                                // No preview or supported embed: open the saved song link.
+                                const songLink = selectedPost.song?.link;
+                                if (songLink && songLink !== "#") {
+                                  window.open(songLink, "_blank", "noopener,noreferrer");
+                                }
+                              } catch (error) {
+                                console.error("Could not play song preview:", error);
+                                setIsSongPlaying(false);
+                              }
+                            }}
+                            className="shrink-0 text-[#f45b95] hover:text-[#e04882] transition"
                           >
-                            {isSongPlaying ? <Volume2 size={12} /> : <VolumeX size={12} />}
-                          </button>
+                          {isSongPlaying || musicEmbedOpen
+                            ? <Volume2 size={12} />
+                            : <VolumeX size={12} />}
+                            </button>
+                          <span>{selectedPost.song.title} · {selectedPost.song.artist}</span>
                         </div>
                       )}
                     </div>
@@ -1681,6 +1811,7 @@ const hiddenCommentsCount = Math.max(
                           setSongArtist(selectedPost.song?.artist ?? "");
                           setSongLink(selectedPost.song?.link ?? "");
                           setShowSongConfig(Boolean(selectedPost.song));
+                          setSongPreviewUrl(selectedPost.song?.preview_url ?? "");
                           setPostLikesInput(String(selectedPost.likes_count ?? ""));
                           setPostCommentsCountInput(String(selectedPost.comments_count ?? ""));
                           setPostDateInput(toDateTimeLocalValue(selectedPost.created_at));
@@ -1704,6 +1835,8 @@ const hiddenCommentsCount = Math.max(
                         setPostLikesInput("");
                         setPostCommentsCountInput("");
                         setPostDateInput("");
+                        setSongPreviewUrl("");
+                        setSongPreviewUrl("");
                       }}
                       className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white"
                     >
@@ -1711,6 +1844,27 @@ const hiddenCommentsCount = Math.max(
                     </button>
                   </div>
                 </div>
+                {musicEmbedOpen && (() => {
+                  const songLink = selectedPost.song?.link;
+                  const embedUrl = getMusicEmbedUrl(songLink);
+
+                  if (!embedUrl) return null;
+
+                  const isSpotifyTrack = songLink?.includes("open.spotify.com/track/");
+                  const playerHeight = isSpotifyTrack ? 80 : 150;
+
+                  return (
+                    <iframe
+                      title={`Music player for ${selectedPost.song?.title || "song"}`}
+                      src={embedUrl}
+                      width="100%"
+                      height={playerHeight}
+                      loading="lazy"
+                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                      className="w-full rounded-xl border-0"
+                    />
+                  );
+                })()}
               </div>
 
               {/* Post Media Carousel */}
@@ -1777,7 +1931,7 @@ const hiddenCommentsCount = Math.max(
               </div>
 
               {/* Action Bar */}
-              <div className="p-4 flex flex-col gap-2 border-none">
+              <div className="px-4 pt-4 pb-1 flex flex-col gap-2 border-none">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     
@@ -1879,7 +2033,7 @@ const hiddenCommentsCount = Math.max(
                       type="button"
                       title="Copy link to post"
                       onClick={() => {
-                        const link = `${window.location.origin}/phone/${character.id}`;
+                        const link = `${window.location.origin}/${writerNumber}/c/${characterNumber}`;
                         navigator.clipboard.writeText(link);
                         alert("Post link copied to clipboard!");
                       }}
@@ -1945,7 +2099,7 @@ const hiddenCommentsCount = Math.max(
                       className="mr-2 font-semibold cursor-pointer hover:underline"
                       onClick={() => {
                         setSelectedPost(null);
-                        router.push(`/phone/${character.id}`);
+                        router.push(characterProfileHref);
                       }}
                     >
                       @{character.handle || character.name}
@@ -1960,7 +2114,7 @@ const hiddenCommentsCount = Math.max(
               </div>
 
               {/* Comment Section */}
-              <div className="flex flex-col gap-4 p-4">
+              <div className="flex flex-col gap-4 px-4 pt-1 pb-4">
                 <div className="flex flex-col gap-2.5 p-3 rounded-2xl bg-neutral-100 dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10">
                   <div className="flex items-center gap-2.5">
                     <div className="relative">
@@ -2716,6 +2870,13 @@ const hiddenCommentsCount = Math.max(
                       placeholder="Song Link"
                       value={songLink}
                       onChange={(e) => setSongLink(e.target.value)}
+                      className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 font-semibold outline-none"
+                    />
+                    <input
+                      type="url"
+                      placeholder="Direct audio preview URL (optional)"
+                      value={songPreviewUrl}
+                      onChange={(e) => setSongPreviewUrl(e.target.value)}
                       className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#1e2029] border border-neutral-200 dark:border-white/10 font-semibold outline-none"
                     />
                   </div>

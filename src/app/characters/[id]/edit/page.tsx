@@ -145,7 +145,9 @@ export default function EditCharacterPage() {
         setTagline(charData.tagline || "");
         setAkaLine(charData.aka_line || "");
         setBio(charData.bio || "");
-        setCustomFollowers(charData.followers_count ? String(charData.followers_count) : "");
+        setCustomFollowing(
+          charData.following_count != null ? String(charData.following_count) : ""
+        );
         setDetails(charData.details || []);
         setIsVerified(charData.is_verified || false);
         setIsBrand(charData.is_brand || false);
@@ -244,7 +246,12 @@ export default function EditCharacterPage() {
             .slice(0, 10)
             .filter((d) => d.key.trim() || d.value.trim()),
           bio: bio.trim() || null,
-          followers_count: customFollowers ? parseInt(customFollowers, 10) : 0,
+          followers_count: customFollowers.trim()
+            ? Number.parseInt(customFollowers, 10)
+            : 0,
+          following_count: customFollowing.trim()
+            ? Number.parseInt(customFollowing, 10)
+            : 0,
           is_verified: isVerified,
           is_brand: isBrand,
           is_npc: isNpc,
@@ -649,6 +656,19 @@ export default function EditCharacterPage() {
               type="text"
               value={customFollowers}
               onChange={(e) => setCustomFollowers(e.target.value)}
+              className="w-full h-11 px-4 rounded-2xl bg-[#edf0f5] dark:bg-[#1c1d24] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+              FOLLOWING SHOWN
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={customFollowing}
+              onChange={(e) => setCustomFollowing(e.target.value)}
+              placeholder="real count"
               className="w-full h-11 px-4 rounded-2xl bg-[#edf0f5] dark:bg-[#1c1d24] border border-neutral-200 dark:border-white/10 text-xs font-semibold outline-none"
             />
           </div>

@@ -17,7 +17,7 @@ export default function CreateStoryModal({ isOpen, onClose, onStoryCreated }: Cr
   const [premise, setPremise] = useState("");
   const [genre, setGenre] = useState("");
   const [rating, setRating] = useState("T: teen");
-  const [visibility, setVisibility] = useState("Private: only writers you invite");
+  const [visibility, setVisibility] = useState("Private");
   const [contentWarnings, setContentWarnings] = useState("");
   const [iconColor, setIconColor] = useState("#f45b95");
   const [iconUrl, setIconUrl] = useState("");
@@ -38,44 +38,81 @@ export default function CreateStoryModal({ isOpen, onClose, onStoryCreated }: Cr
     setLoading(true);
     setError("");
 
+    let createdStoryId: string | null = null;
+
     try {
-      // 1. Insert Story
       const { data: storyData, error: storyError } = await supabase
         .from("stories")
         .insert({
           title: title.trim(),
-          premise: premise.trim(),
-          genre: genre.trim(),
+          premise: premise.trim() || null,
+          genre: genre.trim() || null,
           rating,
           visibility,
-          content_warnings: contentWarnings.trim(),
+          content_warnings: contentWarnings.trim() || null,
           icon_color: iconColor,
           icon_url: iconUrl.trim() || null,
           banner_url: bannerUrl.trim() || null,
           user_id: user.id,
         })
-        .select()
+        .select("id")
         .single();
 
       if (storyError) throw storyError;
 
-      // 2. Automatically create default channels (#main-story and #ooc-chat)
-      if (storyData) {
-        await supabase.from("channels").insert([
+      // Add the creator as a member so their story appears in their sidebar.
+      const { error: membershipError } = await supabase
+        .from("story_members")
+        .insert({
+          story_id: storyData.id,
+          user_id: user.id,
+        });
+
+      if (membershipError) throw membershipError;
+
+      // Then create the starter channels.
+      const { error: channelsError } = await supabase
+        .from("channels")
+        .insert([
           { story_id: storyData.id, name: "main-story", type: "text" },
           { story_id: storyData.id, name: "ooc-chat", type: "text" },
         ]);
-      }
+
+      if (channelsError) throw channelsError;
+
+      createdStoryId = storyData.id;
+
+      setTitle("");
+      setPremise("");
+      setGenre("");
+      setContentWarnings("");
+      setIconColor("#f45b95");
+      setIconUrl("");
+      setBannerUrl("");
 
       onStoryCreated();
       onClose();
     } catch (err: any) {
       console.error("Failed to create story:", err.message);
+
+      // Try to remove a partially created story if membership/channel creation failed.
+      if (createdStoryId) {
+        const { error: cleanupError } = await supabase
+          .from("stories")
+          .delete()
+          .eq("id", createdStoryId)
+          .eq("user_id", user.id);
+
+        if (cleanupError) {
+          console.error("Could not clean up incomplete story:", cleanupError.message);
+        }
+      }
+
       setError(err.message || "Failed to create story.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">

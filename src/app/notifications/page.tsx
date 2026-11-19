@@ -15,10 +15,15 @@ interface NotificationItem {
   content?: string;
   avatar_url?: string;
   actor_name?: string;
+  target_name?: string;
   link?: string;
   created_at: string;
   is_read: boolean;
   category?: "All" | "For you" | "Activity" | "System";
+}
+
+function uppercaseName(value?: string | null): string {
+  return value?.trim().toUpperCase() || "SOMEONE";
 }
 
 function NotificationsContent() {
@@ -200,7 +205,6 @@ function NotificationsContent() {
         ) : (
           filteredNotifications.map((notif) => {
             const rawText = notif.body || notif.content || "";
-            const uppercaseText = rawText.toUpperCase();
 
             return (
               <div
@@ -236,10 +240,26 @@ function NotificationsContent() {
                     <p className="text-sm text-neutral-800 dark:text-neutral-200 leading-relaxed font-semibold break-words">
                       {notif.type === "direct_message" ? (
                         <>
-                          <span className="uppercase font-bold">{notif.actor_name || notif.title?.split(" ")[0]}</span> has messaged you!
+                          <span className="font-bold">
+                            {uppercaseName(notif.actor_name || notif.title?.split(" ")[0])}
+                          </span>{" "}
+                          has messaged you!
                         </>
+                      ) : notif.type === "follow" ? (
+                        (() => {
+                          const match = rawText.match(/^(.+?) started following (.+)$/i);
+                          const actor = notif.actor_name || match?.[1];
+                          const target = notif.target_name || match?.[2];
+
+                          return (
+                            <>
+                              <span className="font-bold">{uppercaseName(actor)}</span> has followed{" "}
+                              <span className="font-bold">{uppercaseName(target)}</span>
+                            </>
+                          );
+                        })()
                       ) : (
-                        <span className="uppercase">{uppercaseText}</span>
+                        rawText
                       )}
                     </p>
                     <span className="text-[11px] text-neutral-400 font-medium">

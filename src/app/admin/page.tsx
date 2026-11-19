@@ -148,22 +148,50 @@ export default function AdminPage() {
       }
 
       // Load Stories[cite: 6]
-      const { data: stories } = await supabase
+      // Load Stories
+      const { data: stories, error: storiesError } = await supabase
         .from("stories")
-        .select("id, title, is_private, updated_at, user_id, profiles(display_name)")
-        .order("updated_at", { ascending: false });
+        .select("id, title, visibility, created_at, user_id")
+        .order("created_at", { ascending: false });
 
-      if (stories) {
+      if (storiesError) {
+        console.error("Could not load admin stories:", storiesError.message);
+      } else {
+        const ownerIds = [
+          ...new Set((stories ?? []).map((story) => story.user_id).filter(Boolean)),
+        ];
+
+        const { data: owners, error: ownersError } = ownerIds.length
+          ? await supabase
+              .from("profiles")
+              .select("id, display_name, username")
+              .in("id", ownerIds)
+          : { data: [], error: null };
+
+        if (ownersError) {
+          console.error("Could not load story owners:", ownersError.message);
+        }
+
+        const ownerById = new Map(
+          (owners ?? []).map((owner) => [owner.id, owner])
+        );
+
         setStoriesList(
-          stories.map((s: any) => ({
-            id: s.id,
-            title: s.title || "Untitled story",
-            owner_name: s.profiles?.display_name || "Unknown",
-            is_private: s.is_private || false,
-            writers_count: 1,
-            posts_count: 0,
-            updated_at: s.updated_at,
-          }))
+          (stories ?? []).map((story) => {
+            const owner = ownerById.get(story.user_id);
+            const visibility = String(story.visibility ?? "");
+
+            return {
+              id: story.id,
+              title: story.title || "Untitled story",
+              owner_name:
+                owner?.display_name || owner?.username || "Unknown",
+              is_private: !visibility.toLowerCase().startsWith("public"),
+              writers_count: 1,
+              posts_count: 0,
+              updated_at: story.created_at,
+            };
+          })
         );
       }
 

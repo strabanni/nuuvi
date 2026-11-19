@@ -34,6 +34,8 @@ interface Conversation {
   user_a: string;
   user_b: string;
   last_message_at: string;
+  last_read_at: string | null;
+  latest_incoming_at: string | null;
   other: PublicProfile;
   preview: string;
 }
@@ -186,16 +188,18 @@ export default function MessagesPage() {
     conversations.find((conversation) => conversation.id === selectedId) ?? null;
 
   // Load conversations and the other participant's public profile.
+  // Load conversations, read markers, and previews; keep the list live.
   useEffect(() => {
+    if (!user) {
+      setConversations([]);
+      setLoadingConversations(false);
+      return;
+    }
+
+    const currentUser = user;
     let cancelled = false;
 
     async function loadConversations() {
-      if (!user) {
-        setConversations([]);
-        setLoadingConversations(false);
-        return;
-      }
-
       setLoadingConversations(true);
       setErrorMessage("");
 
@@ -219,7 +223,7 @@ export default function MessagesPage() {
       }
 
       const otherIds = rows.map((row) =>
-        row.user_a === user.id ? row.user_b : row.user_a
+        row.user_a === currentUser.id ? row.user_b : row.user_a
       );
 
       const { data: profileRows, error: profileError } = await supabase
@@ -241,9 +245,28 @@ export default function MessagesPage() {
         (profileRows ?? []).map((profile) => [profile.id, profile])
       );
 
+      // This is the only conversationIds declaration needed in this effect.
+      const conversationIds = rows.map((row) => row.id);
+
+      const { data: readRows, error: readError } = await supabase
+        .from("dm_reads")
+        .select("conversation_id, last_read_at")
+        .eq("user_id", currentUser.id)
+        .in("conversation_id", conversationIds);
+
+      if (readError) {
+        console.error("Could not load DM read markers:", readError.message);
+      }
+
+      const readByConversation = new Map(
+        (readRows ?? []).map((row) => [row.conversation_id, row.last_read_at])
+      );
+
       const loaded: Conversation[] = await Promise.all(
         rows.map(async (row) => {
-          const otherId = row.user_a === user.id ? row.user_b : row.user_a;
+          const otherId =
+            row.user_a === currentUser.id ? row.user_b : row.user_a;
+
           const other = profileById.get(otherId) ?? {
             id: otherId,
             username: "writer",
@@ -251,18 +274,32 @@ export default function MessagesPage() {
             avatar_url: null,
           };
 
-          const { data: latestMessage } = await supabase
-            .from("dm_messages")
-            .select("body")
-            .eq("conversation_id", row.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          const [{ data: latestMessage }, { data: latestIncoming }] =
+            await Promise.all([
+              supabase
+                .from("dm_messages")
+                .select("body")
+                .eq("conversation_id", row.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+
+              supabase
+                .from("dm_messages")
+                .select("created_at")
+                .eq("conversation_id", row.id)
+                .neq("sender_id", currentUser.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            ]);
 
           return {
             ...row,
             other,
             preview: latestMessage?.body || "No messages yet",
+            last_read_at: readByConversation.get(row.id) ?? null,
+            latest_incoming_at: latestIncoming?.created_at ?? null,
           };
         })
       );
@@ -270,20 +307,43 @@ export default function MessagesPage() {
       if (cancelled) return;
 
       setConversations(loaded);
-
-      if (selectedId && !loaded.some((conversation) => conversation.id === selectedId)) {
-        setSelectedId(null);
-      }
-
       setLoadingConversations(false);
     }
 
-    loadConversations();
+    void loadConversations();
+
+    const conversationUpdates = supabase
+      .channel(`dm-conversation-list-${currentUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "dm_messages",
+        },
+        () => {
+          void loadConversations();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "dm_reads",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        () => {
+          void loadConversations();
+        }
+      )
+      .subscribe();
 
     return () => {
       cancelled = true;
+      void supabase.removeChannel(conversationUpdates);
     };
-  }, [user, selectedId, messages.length]);
+  }, [user]);
 
   // Load messages for the selected conversation and mark it read.
   useEffect(() => {
@@ -294,6 +354,8 @@ export default function MessagesPage() {
         setMessages([]);
         return;
       }
+
+      const currentUser = user;
 
       setLoadingMessages(true);
       setErrorMessage("");
@@ -324,7 +386,7 @@ export default function MessagesPage() {
         .upsert(
           {
             conversation_id: selectedId,
-            user_id: user.id,
+            user_id: currentUser.id,
             last_read_at: new Date().toISOString(),
           },
           { onConflict: "conversation_id,user_id" }
@@ -348,6 +410,8 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!user || !selectedId) return;
 
+    const currentUser = user;
+
     const channel = supabase
       .channel(`dm-messages-${selectedId}`)
       .on(
@@ -361,6 +425,22 @@ export default function MessagesPage() {
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const incoming = payload.new as DirectMessage;
+            if (incoming.sender_id !== currentUser.id) {
+              const { error: readError } = await supabase
+                .from("dm_reads")
+                .upsert(
+                  {
+                    conversation_id: selectedId,
+                    user_id: user.id,
+                    last_read_at: new Date().toISOString(),
+                  },
+                  { onConflict: "conversation_id,user_id" }
+                );
+
+              if (readError) {
+                console.error("Could not update DM read receipt:", readError.message);
+              }
+            }
             const [messageWithPreview] = await addReplyPreviews([incoming]);
             const [messageWithReaction] = await addMessageReactions([messageWithPreview]);
             const [finalMessage] = await addSignedUrls([messageWithReaction]);
@@ -820,10 +900,10 @@ export default function MessagesPage() {
                     </div>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold">
-                        {profile.display_name || profile.user_number}
+                        {profile.display_name || profile.username}
                       </span>
                       <span className="block truncate text-xs text-neutral-500">
-                        @{profile.user_number}
+                        @{profile.username}
                       </span>
                     </span>
                   </button>
@@ -842,10 +922,15 @@ export default function MessagesPage() {
             ) : (
               conversations.map((conversation) => {
                 // Check if this conversation has unread messages
-                const isUnread =
-                  conversation.last_message_at &&
-                  new Date(conversation.last_message_at) >
-                    new Date((conversation as any).last_read_at || 0);
+                const latestIncomingTime = conversation.latest_incoming_at
+                  ? Date.parse(conversation.latest_incoming_at)
+                  : 0;
+
+                const lastReadTime = conversation.last_read_at
+                  ? Date.parse(conversation.last_read_at)
+                  : 0;
+
+                const isUnread = latestIncomingTime > lastReadTime;
 
                 return (
                   <button
